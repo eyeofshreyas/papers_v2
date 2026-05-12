@@ -31,7 +31,7 @@ mod imp {
         pub(super) presentation: TemplateChild<papers_view::ViewPresentation>,
 
         // GObject property exposed for AdwTabPage.title binding
-        #[property(get, set, explicit_notify)]
+        #[property(get, set)]
         pub(super) display_name: RefCell<String>,
 
         // Per-document state (moved from PpsWindow)
