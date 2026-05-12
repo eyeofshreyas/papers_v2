@@ -4,3 +4,4 @@ _build/
 po/papers.pot
 *.clang-format
 target/
+.superpowers/
