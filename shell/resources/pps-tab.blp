@@ -1,5 +1,76 @@
 using Gtk 4.0;
+using Adw 1;
 
 template $PpsTab: Gtk.Widget {
   layout-manager: Gtk.BinLayout {};
+
+  Adw.ViewStack stack {
+    hhomogeneous: false;
+    vhomogeneous: false;
+
+    Adw.ViewStackPage {
+      name: "error";
+
+      child: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {}
+
+        content: Adw.StatusPage error_page {
+          icon-name: "dialog-error-symbolic";
+          title: _("Unable to Open Document");
+
+          child: Button {
+            halign: center;
+            action-name: "win.open";
+            label: _("_Open Other File…");
+            use-underline: true;
+
+            styles [
+              "suggested-action",
+              "pill",
+            ]
+          };
+        };
+      };
+    }
+
+    Adw.ViewStackPage {
+      name: "password";
+
+      child: $PpsPasswordView password_view {
+        unlock => $password_view_unlock() swapped;
+        cancelled => $password_view_cancelled() swapped;
+      };
+    }
+
+    Adw.ViewStackPage {
+      name: "loader";
+
+      child: $PpsLoaderView loader_view {
+        cancel => $loader_view_cancelled() swapped;
+      };
+    }
+
+    Adw.ViewStackPage {
+      name: "document";
+
+      child: $PpsDocumentView document_view {};
+    }
+
+    Adw.ViewStackPage {
+      name: "presentation";
+
+      child: $PpsViewPresentation presentation {
+        finished => $presentation_finished() swapped;
+        external-link => $external_link_clicked() swapped;
+
+        ShortcutController {
+          Shortcut {
+            trigger: "Escape";
+            action: "action(win.escape)";
+          }
+        }
+      };
+    }
+  }
 }
