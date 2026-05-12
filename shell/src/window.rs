@@ -297,6 +297,50 @@ mod imp {
                     .build(),
             ];
             self.obj().add_action_entries(actions);
+
+            // Tab navigation shortcuts
+            let next = gtk::ShortcutController::new();
+            next.set_scope(gtk::ShortcutScope::Managed);
+            next.add_shortcut(gtk::Shortcut::new(
+                Some(gtk::ShortcutTrigger::parse_string("<Ctrl>Tab").unwrap()),
+                Some(gtk::CallbackAction::new(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    #[upgrade_or]
+                    glib::Propagation::Proceed,
+                    move |_, _| {
+                        let tv = &obj.tab_view;
+                        if let Some(page) = tv.selected_page() {
+                            let idx = (tv.page_position(&page) + 1) % tv.n_pages();
+                            tv.set_selected_page(&tv.nth_page(idx));
+                        }
+                        glib::Propagation::Stop
+                    }
+                ))),
+            ));
+            self.obj().add_controller(next);
+
+            let prev = gtk::ShortcutController::new();
+            prev.set_scope(gtk::ShortcutScope::Managed);
+            prev.add_shortcut(gtk::Shortcut::new(
+                Some(gtk::ShortcutTrigger::parse_string("<Ctrl><Shift>Tab").unwrap()),
+                Some(gtk::CallbackAction::new(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    #[upgrade_or]
+                    glib::Propagation::Proceed,
+                    move |_, _| {
+                        let tv = &obj.tab_view;
+                        if let Some(page) = tv.selected_page() {
+                            let n = tv.n_pages();
+                            let idx = (tv.page_position(&page) + n - 1) % n;
+                            tv.set_selected_page(&tv.nth_page(idx));
+                        }
+                        glib::Propagation::Stop
+                    }
+                ))),
+            ));
+            self.obj().add_controller(prev);
         }
 
         fn setup_window_size(&self) {
@@ -515,6 +559,10 @@ impl PpsWindow {
             .property("application", gio::Application::default())
             .property("show-menubar", false)
             .build()
+    }
+
+    pub fn tab_view(&self) -> adw::TabView {
+        self.imp().tab_view.get()
     }
 
     pub fn uri(&self) -> Option<String> {

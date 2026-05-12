@@ -112,6 +112,8 @@ mod imp {
         pub(super) scrolled_window: TemplateChild<gtk::ScrolledWindow>,
         #[template_child]
         pub(super) action_menu_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub(super) tab_button: TemplateChild<adw::TabButton>,
 
         #[template_child]
         pub(super) error_alert: TemplateChild<adw::AlertDialog>,
@@ -327,6 +329,12 @@ mod imp {
             self.highlight_color_popover.set_offset(0, -8);
             self.text_font_popover.set_offset(0, -8);
             self.text_color_popover.set_offset(0, -8);
+
+            self.obj().connect_realize(|obj| {
+                if let Some(window) = obj.root().and_downcast::<crate::window::PpsWindow>() {
+                    obj.imp().tab_button.set_view(Some(&window.tab_view()));
+                }
+            });
         }
     }
 

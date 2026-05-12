@@ -166,35 +166,21 @@ mod imp {
             mode: Option<WindowRunMode>,
         ) {
             let obj = self.obj();
-            let mut n_window = 0;
-            let mut window = None;
             let uri = file.uri();
 
-            for w in obj
+            // Find a window that is empty or already shows this URI, or use any window
+            let window = obj
                 .windows()
                 .into_iter()
                 .filter_map(|w| w.downcast::<PpsWindow>().ok())
-            {
-                if w.is_empty() || w.uri().is_some_and(|u| u == uri) {
-                    window = Some(w.clone());
-                }
+                .find(|w| w.is_empty() || w.uri().is_some_and(|u| u == uri))
+                .or_else(|| {
+                    obj.windows()
+                        .into_iter()
+                        .find_map(|w| w.downcast::<PpsWindow>().ok())
+                })
+                .unwrap_or_default();
 
-                n_window += 1;
-            }
-
-            if n_window != 0 && window.is_none() {
-                // There are windows, but they hold a different document.
-                // Since we don't have security between documents, then
-                // spawn a new process! See:
-                // https://gitlab.gnome.org/GNOME/papers/-/issues/104
-                spawn(Some(file), dest, mode);
-                return;
-            }
-
-            let window = window.unwrap_or_default();
-
-            // We need to load uri before showing the window, so
-            // we can restore window size without flickering
             window.open(file, dest, mode);
             window.present();
         }
