@@ -177,6 +177,17 @@ template $PpsDocumentView: Adw.BreakpointBin {
               };
             }
 
+            Adw.ViewStackPage {
+              name: "chat";
+              title: _("Chat");
+              icon-name: "help-faq-symbolic";
+
+              child: $PpsSidebarChat sidebar_chat {
+                document-model: "model";
+                sidebar: "sidebar";
+              };
+            }
+
             visible-child-name: "links";
           }
         }

@@ -29,6 +29,7 @@ mod sidebar;
 mod sidebar_annotations;
 mod sidebar_annotations_row;
 mod sidebar_attachments;
+mod sidebar_chat;
 mod sidebar_layers;
 mod sidebar_links;
 mod sidebar_page;

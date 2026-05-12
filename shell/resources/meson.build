@@ -19,6 +19,7 @@ blueprint_sources = [
   'pps-sidebar-annotations-row.blp',
   'pps-sidebar-annotations.blp',
   'pps-sidebar-attachments.blp',
+  'pps-sidebar-chat.blp',
   'pps-sidebar-layers.blp',
   'pps-sidebar-links.blp',
   'pps-sidebar-thumbnails.blp',

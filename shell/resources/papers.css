@@ -1,3 +1,17 @@
+.chat-bubble-user {
+    background-color: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+    border-radius: 12px 12px 2px 12px;
+    padding: 8px 12px;
+}
+
+.chat-bubble-assistant {
+    background-color: var(--card-bg-color);
+    color: var(--card-fg-color);
+    border-radius: 12px 12px 12px 2px;
+    padding: 8px 12px;
+}
+
 image.symbolic-circular {
   background-color: color-mix(in srgb, currentColor 8%, transparent);
   min-width: 32px;

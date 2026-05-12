@@ -22,6 +22,8 @@ log.workspace = true
 gettext-rs.workspace = true
 lru = "0.16"
 futures = "0.3"
+ureq.workspace = true
+serde_json.workspace = true
 git-version = "0.3"
 formatx = "0.2"
 ink-stroke-modeler-rs = { version = "0.1" }

@@ -1,0 +1,143 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PpsSidebarChat: $PpsSidebarPage {
+  child: Box {
+    orientation: vertical;
+    vexpand: true;
+
+    Box {
+      orientation: horizontal;
+      margin-start: 12;
+      margin-end: 4;
+      margin-top: 6;
+      margin-bottom: 6;
+
+      Label {
+        label: _("AI Chat");
+        hexpand: true;
+        xalign: 0.0;
+
+        styles [
+          "heading",
+        ]
+      }
+
+      Button clear_button {
+        icon-name: "edit-clear-all-symbolic";
+        tooltip-text: _("Clear chat");
+        clicked => $on_clear() swapped;
+
+        styles [
+          "flat",
+        ]
+      }
+    }
+
+    Separator {}
+
+    ScrolledWindow scroll_window {
+      vexpand: true;
+      hscrollbar-policy: never;
+
+      child: Box message_box {
+        orientation: vertical;
+        spacing: 4;
+        margin-top: 12;
+        margin-bottom: 12;
+        margin-start: 12;
+        margin-end: 12;
+
+        Adw.StatusPage empty_status {
+          vexpand: true;
+          title: _("Chat with Document");
+          description: _("Ask questions about this document. Ollama and Gemma start automatically.");
+          icon-name: "help-faq-symbolic";
+
+          styles [
+            "compact",
+          ]
+        }
+      };
+    }
+
+    Revealer loading_revealer {
+      reveal-child: false;
+      transition-type: slide_down;
+
+      child: Box {
+        orientation: horizontal;
+        spacing: 8;
+        margin-top: 6;
+        margin-bottom: 6;
+        margin-start: 12;
+        margin-end: 12;
+
+        Spinner spinner {
+          spinning: true;
+        }
+
+        Label loading_label {
+          label: _("Thinking…");
+          hexpand: true;
+          xalign: 0.0;
+
+          styles [
+            "dim-label",
+          ]
+        }
+      };
+    }
+
+    Button summarize_button {
+      label: _("Summarize this page");
+      margin-start: 12;
+      margin-end: 12;
+      margin-bottom: 6;
+      clicked => $on_summarize() swapped;
+
+      styles [
+        "pill",
+      ]
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+      margin-bottom: 12;
+      margin-start: 12;
+      margin-end: 12;
+
+      Entry input_entry {
+        hexpand: true;
+        placeholder-text: _("Ask a question…");
+        activate => $on_send() swapped;
+      }
+
+      Button send_button {
+        icon-name: "go-next-symbolic";
+        tooltip-text: _("Send");
+        clicked => $on_send() swapped;
+        valign: center;
+
+        styles [
+          "suggested-action",
+          "circular",
+        ]
+      }
+
+      Button stop_button {
+        icon-name: "media-playback-stop-symbolic";
+        tooltip-text: _("Stop");
+        clicked => $on_stop() swapped;
+        valign: center;
+        visible: false;
+
+        styles [
+          "destructive-action",
+          "circular",
+        ]
+      }
+    }
+  };
+}

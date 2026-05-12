@@ -102,6 +102,8 @@ mod imp {
         #[template_child]
         pub(super) sidebar_attachments: TemplateChild<PpsSidebarAttachments>,
         #[template_child]
+        pub(super) sidebar_chat: TemplateChild<PpsSidebarChat>,
+        #[template_child]
         pub(super) attachment_context: TemplateChild<papers_view::AttachmentContext>,
 
         #[template_child]

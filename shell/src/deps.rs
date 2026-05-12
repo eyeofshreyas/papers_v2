@@ -61,6 +61,7 @@ pub use crate::sidebar::PpsSidebar;
 pub use crate::sidebar_annotations::PpsSidebarAnnotations;
 pub use crate::sidebar_annotations_row::PpsSidebarAnnotationsRow;
 pub use crate::sidebar_attachments::PpsSidebarAttachments;
+pub use crate::sidebar_chat::PpsSidebarChat;
 pub use crate::sidebar_layers::PpsSidebarLayers;
 pub use crate::sidebar_links::PpsSidebarLinks;
 pub use crate::sidebar_page::{PpsSidebarPage, PpsSidebarPageExt, PpsSidebarPageImpl};
