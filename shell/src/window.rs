@@ -450,7 +450,7 @@ mod imp {
             self.set_mode(WindowRunMode::ErrorView);
         }
 
-        fn error_message(&self, error: Option<&glib::Error>, msg: &str) {
+        pub(super) fn error_message(&self, error: Option<&glib::Error>, msg: &str) {
             let toast = adw::Toast::builder().timeout(20).title(msg).build();
 
             if let Some(error) = error {
@@ -1331,6 +1331,10 @@ impl PpsWindow {
     ) {
         self.imp()
             .open_copy(metadata, dest, display_name, edit_name);
+    }
+
+    pub(crate) fn show_error_message(&self, error: Option<&glib::Error>, msg: &str) {
+        self.imp().error_message(error, msg);
     }
 }
 

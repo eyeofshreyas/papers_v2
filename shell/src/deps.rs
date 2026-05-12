@@ -68,3 +68,4 @@ pub use crate::sidebar_page::{PpsSidebarPage, PpsSidebarPageExt, PpsSidebarPageI
 pub use crate::sidebar_thumbnails::PpsSidebarThumbnails;
 pub use crate::thumbnail_item::PpsThumbnailItem;
 pub use crate::window::PpsWindow;
+pub use crate::tab::PpsTab;
