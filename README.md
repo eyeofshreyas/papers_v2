@@ -1,49 +1,54 @@
-# ![papers-logo] Document Viewer
+# Papers Document Viewer
 
-Papers is a document viewer capable of displaying multiple and single
-page document formats like PDF and DejaVu.  For more general
-information about Papers and how to get started, please visit
-[https://welcome.gnome.org/app/Papers](https://welcome.gnome.org/app/Papers)
+A fork of [GNOME Papers](https://welcome.gnome.org/app/Papers) with browser-style document tabs — open multiple PDFs in one window and switch between them instantly.
 
-## Installation
+## What's different from upstream
 
-Papers is licensed under the [GPLv2][license], get it on Flathub!
+- **Document tabs** — open as many documents as you want in a single window
+- Tab bar auto-hides when only one document is open
+- Tab overview (card grid) via the grid button in the toolbar
+- Keyboard shortcuts: `Ctrl+T` open, `Ctrl+W` close tab, `Ctrl+Tab` / `Ctrl+Shift+Tab` cycle tabs
+- Files opened from the file manager or CLI open as a new tab in the running window instead of spawning a new process
 
-[![flatpak]](https://flathub.org/apps/details/org.gnome.Papers)
+Everything else — sidebars, annotations, search, print, presentation mode, AI chat — is unchanged from upstream.
 
-## Reporting and Development
+## Build from source
 
-If you experience issues with Papers, check out the [reporting tips](TESTING.md).
-Developers should make sure to read the [contributing](CONTRIBUTING.md)
-guidelines, before starting to work on any changes.
+**Dependencies** (Ubuntu/Debian):
+```bash
+sudo apt install meson ninja-build rustc cargo \
+  libgtk-4-dev libadwaita-1-dev libpoppler-glib-dev \
+  blueprint-compiler gettext
+```
 
-### Papers Requirements
+**Build and install:**
+```bash
+git clone https://github.com/eyeofshreyas/papers_v2.git
+cd papers_v2
+meson setup build
+meson compile -C build
+sudo meson install -C build
+```
 
-* [GNOME Platform libraries][gnome]
-* [Poppler for PDF viewing][poppler]
+The binary installs to `/usr/local/bin/papers` which takes priority over any system-installed Papers.
 
-### Papers Optional Backend Libraries
+**Run without installing** (for development):
+```bash
+meson setup build -Dprofile=devel
+meson compile -C build
+meson devenv -C build papers
+```
 
-* [DjVuLibre for DjVu viewing][djvulibre]
-* [Archive library for Comic Book Resources (CBR) viewing][comics]
-* [LibTiff for Multipage TIFF viewing][tiff]
+## Supported formats
 
-[gnome]: https://www.gnome.org/
-[poppler]: https://poppler.freedesktop.org/
-[djvulibre]: https://djvu.sourceforge.net/
-[comics]: https://libarchive.org/
-[tiff]: https://libtiff.gitlab.io/libtiff/
-[license]: COPYING
-[papers-logo]: data/icons/scalable/apps/org.gnome.Papers.svg
-[flatpak]: https://flathub.org/api/badge?svg&locale=en
+| Format | Library |
+|---|---|
+| PDF | [Poppler](https://poppler.freedesktop.org/) |
+| DjVu | [DjVuLibre](https://djvu.sourceforge.net/) |
+| Comic books (CBR/CBZ) | [libarchive](https://libarchive.org/) |
+| TIFF | [LibTiff](https://libtiff.gitlab.io/libtiff/) |
 
-## Documentation
+## License
 
-The documentation for the libraries can be found online.
-
-* [libppsview](https://gnome.pages.gitlab.gnome.org/papers/view/)
-* [libppsdocument](https://gnome.pages.gitlab.gnome.org/papers/document/)
-
-## Code of Conduct
-
-When interacting with the project, the [GNOME Code Of Conduct](https://conduct.gnome.org/) applies.
+GPL-2.0-or-later. See [COPYING](COPYING).  
+Based on [GNOME Papers](https://gitlab.gnome.org/GNOME/papers) — original authors retain their copyright.
