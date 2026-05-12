@@ -60,67 +60,19 @@ template $PpsWindow: Adw.ApplicationWindow {
       }
 
       Adw.ViewStackPage {
-        name: "error";
+        name: "has-tabs";
 
-        child: Adw.ToolbarView {
-          [top]
-          Adw.HeaderBar {}
+        child: Adw.TabOverview tab_overview {
+          view: tab_view;
 
-          content: Adw.StatusPage error_page {
-            icon-name: "dialog-error-symbolic";
-            title: _("Unable to Open Document");
-
-            child: Button {
-              halign: center;
-              action-name: "win.open";
-              label: _("_Open Other File…");
-              use-underline: true;
-
-              styles [
-                "suggested-action",
-                "pill",
-              ]
-            };
-          };
-        };
-      }
-
-      Adw.ViewStackPage {
-        name: "password";
-
-        child: $PpsPasswordView password_view {
-          unlock => $password_view_unlock() swapped;
-          cancelled => $password_view_cancelled() swapped;
-        };
-      }
-
-      Adw.ViewStackPage {
-        name: "loader";
-
-        child: $PpsLoaderView loader_view {
-          cancel => $loader_view_cancelled() swapped;
-        };
-      }
-
-      Adw.ViewStackPage {
-        name: "document";
-
-        child: $PpsDocumentView document_view {};
-      }
-
-      Adw.ViewStackPage {
-        name: "presentation";
-
-        child: $PpsViewPresentation presentation {
-          finished => $presentation_finished() swapped;
-          external-link => $external_link_clicked() swapped;
-
-          ShortcutController {
-            Shortcut {
-              trigger: "Escape";
-              action: "action(win.escape)";
+          child: Adw.ToolbarView {
+            [top]
+            Adw.TabBar tab_bar {
+              view: tab_view;
             }
-          }
+
+            content: Adw.TabView tab_view {};
+          };
         };
       }
     };
