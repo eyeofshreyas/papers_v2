@@ -16,6 +16,7 @@
     <file alias="ui/sidebar-chat.ui" compressed="true" preprocess="xml-stripblanks">pps-sidebar-chat.ui</file>
     <file alias="ui/sidebar-annotations-row.ui" compressed="true" preprocess="xml-stripblanks">pps-sidebar-annotations-row.ui</file>
     <file alias="ui/window.ui" compressed="true" preprocess="xml-stripblanks">pps-window.ui</file>
+    <file alias="ui/tab.ui" compressed="true" preprocess="xml-stripblanks">pps-tab.ui</file>
     <file alias="ui/document-view.ui" compressed="true" preprocess="xml-stripblanks">pps-document-view.ui</file>
     <file alias="ui/sidebar-links.ui" compressed="true" preprocess="xml-stripblanks">pps-sidebar-links.ui</file>
     <file alias="ui/sidebar-thumbnails.ui" compressed="true" preprocess="xml-stripblanks">pps-sidebar-thumbnails.ui</file>

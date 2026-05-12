@@ -24,6 +24,7 @@ blueprint_sources = [
   'pps-sidebar-links.blp',
   'pps-sidebar-thumbnails.blp',
   'pps-sidebar.blp',
+  'pps-tab.blp',
   'pps-window.blp',
 ]
 
