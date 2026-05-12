@@ -797,6 +797,18 @@ impl PpsTab {
     pub fn stop_presentation(&self) {
         self.imp().stop_presentation();
     }
+
+    pub fn mode(&self) -> WindowRunMode {
+        self.imp().mode.get()
+    }
+
+    pub fn set_mode(&self, mode: WindowRunMode) {
+        self.imp().set_mode(mode);
+    }
+
+    pub fn metadata(&self) -> Option<papers_view::Metadata> {
+        self.imp().metadata.borrow().clone()
+    }
 }
 
 impl Default for PpsTab {
