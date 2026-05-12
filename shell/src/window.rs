@@ -127,12 +127,13 @@ mod imp {
                         );
                         return glib::Propagation::Stop; // handled asynchronously
                     }
-                    // No unsaved changes — allow close and close window if last tab
+                    // No unsaved changes — we call close_page_finish ourselves,
+                    // so return Stop to prevent the default handler from calling it again.
                     tab_view.close_page_finish(page, true);
                     if tab_view.n_pages() == 0 {
                         obj.obj().close();
                     }
-                    glib::Propagation::Proceed
+                    glib::Propagation::Stop
                 }
             ));
 
