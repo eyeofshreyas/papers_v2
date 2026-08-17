@@ -117,6 +117,19 @@ pub fn parse_page_ranges(input: &str, n_pages: u32) -> Result<Vec<u32>, String> 
 mod tests {
     use super::*;
 
+    /// Builds an `n`-page PDF at `dest` by duplicating the single page in
+    /// `source` `n` times. The checked-in fixture (`utf16le-annot.pdf`) is
+    /// single-page; several tests need a real multi-page document.
+    fn make_multi_page_pdf(source: &Path, dest: &Path, n: usize) {
+        let src = qpdf::QPdf::read(source).unwrap();
+        let page = src.get_page(0).unwrap();
+        let dest_pdf = qpdf::QPdf::empty();
+        for _ in 0..n {
+            dest_pdf.add_page(&page, false).unwrap();
+        }
+        dest_pdf.writer().write(dest).unwrap();
+    }
+
     /// Exercises `compress()` against a real PDF end-to-end: the file still
     /// parses as valid PDF afterward (no corruption from the temp-file-and-
     /// rename swap), and its reported page count is unchanged.
@@ -180,7 +193,7 @@ mod tests {
             std::env::temp_dir().join(format!("papers-delete-test-{}", std::process::id()));
         fs::create_dir_all(&tmp_dir).unwrap();
         let target = tmp_dir.join("copy.pdf");
-        fs::copy(&source, &target).unwrap();
+        make_multi_page_pdf(&source, &target, 3);
 
         let original_pages = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
         assert!(original_pages >= 2, "test PDF needs at least 2 pages");
