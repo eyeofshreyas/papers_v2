@@ -5,3 +5,4 @@ po/papers.pot
 *.clang-format
 target/
 .superpowers/
+.worktrees/
