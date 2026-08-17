@@ -173,6 +173,42 @@ pub fn extract_pages(src_path: &Path, dest_path: &Path, indices: &[u32]) -> Resu
     Ok(())
 }
 
+/// Inserts every page of the PDF at `insert_path` into `path`, in
+/// place, starting at 0-based position `at_index` (appended at the end
+/// if `at_index` is beyond the current last page).
+pub fn merge_pages(path: &Path, insert_path: &Path, at_index: u32) -> Result<(), String> {
+    let pdf = qpdf::QPdf::read(path).map_err(|e| e.to_string())?;
+    let foreign = qpdf::QPdf::read(insert_path).map_err(|e| e.to_string())?;
+    let foreign_pages = foreign.get_pages().map_err(|e| e.to_string())?;
+
+    if foreign_pages.is_empty() {
+        return Err("the selected PDF has no pages".to_string());
+    }
+
+    let n_pages = pdf.get_num_pages().map_err(|e| e.to_string())?;
+
+    if at_index >= n_pages {
+        for page in &foreign_pages {
+            pdf.add_page(page, false).map_err(|e| e.to_string())?;
+        }
+    } else {
+        let ref_page = pdf
+            .get_page(at_index)
+            .ok_or_else(|| format!("page {at_index} out of range"))?;
+        for page in &foreign_pages {
+            pdf.add_page_at(page, true, &ref_page)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    let writer = pdf.writer();
+    let tmp_path = path.with_extension("papers-merge-tmp");
+    writer.write(&tmp_path).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 /// Parses a 1-based page-range string like `"1-3,5,8-10"` (as shown to
 /// the user) into validated, deduplicated, sorted 0-based page indices
 /// within `0..n_pages`.
@@ -471,6 +507,56 @@ mod tests {
         let dest = tmp_dir.join("extracted.pdf");
 
         assert!(extract_pages(&src, &dest, &[]).is_err());
+
+        fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn merge_pages_inserts_foreign_pages_at_position() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/utf16le-annot.pdf");
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-merge-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let target = tmp_dir.join("target.pdf");
+        let insert = tmp_dir.join("insert.pdf");
+        fs::copy(&source, &target).unwrap();
+        fs::copy(&source, &insert).unwrap();
+
+        let target_pages = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
+        let insert_pages = qpdf::QPdf::read(&insert).unwrap().get_num_pages().unwrap();
+
+        merge_pages(&target, &insert, 0).expect("merge_pages should succeed");
+
+        let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
+        assert_eq!(
+            reopened.get_num_pages().unwrap(),
+            target_pages + insert_pages
+        );
+
+        fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn merge_pages_appends_when_index_beyond_end() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/utf16le-annot.pdf");
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-merge-append-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let target = tmp_dir.join("target.pdf");
+        let insert = tmp_dir.join("insert.pdf");
+        fs::copy(&source, &target).unwrap();
+        fs::copy(&source, &insert).unwrap();
+
+        let target_pages = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
+        let insert_pages = qpdf::QPdf::read(&insert).unwrap().get_num_pages().unwrap();
+
+        merge_pages(&target, &insert, 9999).expect("merge_pages should succeed");
+
+        let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
+        assert_eq!(
+            reopened.get_num_pages().unwrap(),
+            target_pages + insert_pages
+        );
 
         fs::remove_dir_all(&tmp_dir).ok();
     }
