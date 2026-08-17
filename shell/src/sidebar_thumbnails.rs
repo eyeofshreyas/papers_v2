@@ -268,6 +268,7 @@ mod imp {
 
             let drag_source = gtk::DragSource::builder()
                 .actions(gdk::DragAction::MOVE)
+                .button(gdk::BUTTON_PRIMARY)
                 .build();
 
             drag_source.connect_prepare(glib::clone!(
