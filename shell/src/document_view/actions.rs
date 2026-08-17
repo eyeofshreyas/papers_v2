@@ -2,7 +2,9 @@ use super::*;
 
 use crate::document_view::enums::AnnotationColor;
 use gtk::gdk::gdk_pixbuf;
-use papers_document::{AnnotationTextMarkupType, DocumentImages, DocumentSignatures};
+use papers_document::{
+    AnnotationFreeText, AnnotationTextMarkupType, DocumentImages, DocumentSignatures, Rectangle,
+};
 use papers_view::AnnotationTool;
 use papers_view::annotations_context::AddAnnotationData;
 
@@ -157,6 +159,15 @@ impl imp::PpsDocumentView {
                     self,
                     move |_, _, _| {
                         obj.cmd_save_as();
+                    }
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("add-watermark")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| {
+                        obj.cmd_add_watermark();
                     }
                 ))
                 .build(),
@@ -1022,6 +1033,92 @@ impl imp::PpsDocumentView {
     }
 
     fn cmd_save_as(&self) {
+        self.save_as();
+    }
+
+    fn cmd_add_watermark(&self) {
+        let entry = adw::EntryRow::builder()
+            .title(gettext("Watermark Text"))
+            .build();
+
+        let opacity_row = adw::SpinRow::with_range(1.0, 100.0, 1.0);
+        opacity_row.set_title(&gettext("Opacity"));
+        opacity_row.set_value(30.0);
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&entry);
+        group.add(&opacity_row);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Add Watermark"))
+            .body(gettext(
+                "Adds this text as a watermark to every page, then saves the document.",
+            ))
+            .extra_child(&group)
+            .default_response("add")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("add", &gettext("_Add"))]);
+        dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);
+        dialog.set_response_enabled("add", false);
+
+        entry.connect_changed(glib::clone!(
+            #[weak]
+            dialog,
+            move |entry| {
+                dialog.set_response_enabled("add", !entry.text().is_empty());
+            }
+        ));
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                entry,
+                #[strong]
+                opacity_row,
+                move |_, response| {
+                    if response == "add" {
+                        obj.apply_watermark(&entry.text(), opacity_row.value() / 100.0);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn apply_watermark(&self, text: &str, opacity: f64) {
+        let Some(document) = self.document() else {
+            return;
+        };
+        let Some(annotations_doc) = document.dynamic_cast_ref::<DocumentAnnotations>() else {
+            return;
+        };
+
+        for i in 0..document.n_pages() {
+            let Some(page) = document.page(i) else {
+                continue;
+            };
+            let (width, height) = document.page_size(i);
+            let margin = width.min(height) * 0.1;
+            let rect = Rectangle::with_coords(margin, margin, width - margin, height - margin);
+
+            let annot = AnnotationFreeText::new(&page);
+            annot.set_area(&rect);
+            annot.set_contents(text);
+            annot.set_rgba(&gdk::RGBA::new(0.5, 0.5, 0.5, 1.0));
+
+            if let Some(markup) = annot.dynamic_cast_ref::<AnnotationMarkup>() {
+                markup.set_opacity(opacity);
+            }
+
+            annotations_doc.add_annotation(&annot);
+        }
+
         self.save_as();
     }
 
