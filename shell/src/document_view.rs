@@ -915,7 +915,14 @@ impl PpsDocumentView {
     }
 
     pub fn handle_page_popup(&self, page: i32) {
-        self.imp().rotate_page_target.set(page);
+        let imp = self.imp();
+
+        imp.rotate_page_target.set(page);
+
+        let bookmarked = imp.sidebar_thumbs.is_bookmarked(page);
+
+        imp.set_action_enabled("bookmark-page", !bookmarked);
+        imp.set_action_enabled("remove-bookmark-page", bookmarked);
     }
 
     pub fn model(&self) -> DocumentModel {

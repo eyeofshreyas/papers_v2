@@ -76,7 +76,14 @@ menu thumbnail-popup {
   section {
     item {
       label: _("_Bookmark Page");
-      action: "doc.toggle-bookmark-page";
+      action: "doc.bookmark-page";
+      hidden-when: "action-disabled";
+    }
+
+    item {
+      label: _("_Remove Bookmark");
+      action: "doc.remove-bookmark-page";
+      hidden-when: "action-disabled";
     }
   }
 

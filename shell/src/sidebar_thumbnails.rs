@@ -207,6 +207,8 @@ mod imp {
 
             let bookmark_icon = gtk::Image::builder()
                 .icon_name("starred-symbolic")
+                .pixel_size(12)
+                .css_classes(["thumbnail-bookmark"])
                 .halign(gtk::Align::End)
                 .valign(gtk::Align::Start)
                 .visible(false)
@@ -767,24 +769,27 @@ mod imp {
             }
         }
 
-        pub(super) fn toggle_bookmark(&self, doc_page: i32) {
-            let now_bookmarked = {
+        pub(super) fn is_bookmarked(&self, doc_page: i32) -> bool {
+            self.bookmarks.borrow().contains(&doc_page)
+        }
+
+        pub(super) fn set_bookmarked(&self, doc_page: i32, bookmarked: bool) {
+            {
                 let mut bookmarks = self.bookmarks.borrow_mut();
 
-                if bookmarks.remove(&doc_page) {
-                    false
-                } else {
+                if bookmarked {
                     bookmarks.insert(doc_page);
-                    true
+                } else {
+                    bookmarks.remove(&doc_page);
                 }
-            };
+            }
 
             let store_index = self.index_of_store(doc_page);
 
             if let Some(item) = self.list_store.item(store_index as u32)
                 && let Ok(item) = item.downcast::<PpsThumbnailItem>()
             {
-                item.set_bookmarked(now_bookmarked);
+                item.set_bookmarked(bookmarked);
             }
 
             self.store_bookmarks();
@@ -861,8 +866,12 @@ impl PpsSidebarThumbnails {
         glib::Object::builder().build()
     }
 
-    pub fn toggle_bookmark(&self, doc_page: i32) {
-        self.imp().toggle_bookmark(doc_page);
+    pub fn is_bookmarked(&self, doc_page: i32) -> bool {
+        self.imp().is_bookmarked(doc_page)
+    }
+
+    pub fn set_bookmarked(&self, doc_page: i32, bookmarked: bool) {
+        self.imp().set_bookmarked(doc_page, bookmarked);
     }
 }
 

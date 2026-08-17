@@ -411,11 +411,18 @@ impl imp::PpsDocumentView {
                     move |_, _, _| obj.cmd_rotate_page_right()
                 ))
                 .build(),
-            gio::ActionEntryBuilder::new("toggle-bookmark-page")
+            gio::ActionEntryBuilder::new("bookmark-page")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]
                     self,
-                    move |_, _, _| obj.cmd_toggle_bookmark_page()
+                    move |_, _, _| obj.cmd_set_bookmark_page(true)
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("remove-bookmark-page")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_set_bookmark_page(false)
                 ))
                 .build(),
             gio::ActionEntryBuilder::new("copy")
@@ -1009,9 +1016,9 @@ impl imp::PpsDocumentView {
         self.rotate_page(90);
     }
 
-    fn cmd_toggle_bookmark_page(&self) {
+    fn cmd_set_bookmark_page(&self, bookmarked: bool) {
         let page = self.rotate_page_target.get();
-        self.sidebar_thumbs.toggle_bookmark(page);
+        self.sidebar_thumbs.set_bookmarked(page, bookmarked);
     }
 
     fn cmd_save_as(&self) {

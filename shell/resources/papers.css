@@ -136,6 +136,15 @@ pps-sidebar-thumbnails picture {
     border-radius: 6px;
 }
 
+pps-sidebar-thumbnails .thumbnail-bookmark {
+    background-color: var(--accent-bg-color);
+    color: var(--accent-fg-color);
+    border-radius: 9999px;
+    padding: 3px;
+    margin: 4px;
+    box-shadow: 0 1px 2px alpha(black, 0.3);
+}
+
 pps-sidebar-thumbnails.columns-1 gridview > child {
     padding: 12px 12px 6px;
     border-radius: 12px;
