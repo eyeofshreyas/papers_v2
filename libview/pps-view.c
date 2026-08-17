@@ -265,13 +265,20 @@ pps_view_build_height_to_page_cache (PpsView *view,
 
 	swap = (rotation == 90 || rotation == 270);
 
-	uniform = pps_document_is_page_size_uniform (document);
+	/* ponytail: once any page rotation has ever been set, fall back to the
+	 * slow non-uniform layout path for the rest of the document's lifetime
+	 * (even if later reset to 0). Recomputing "is any page still swapped
+	 * relative to its neighbors" precisely isn't worth it for a rare,
+	 * explicit user action. */
+	uniform = pps_document_is_page_size_uniform (document) &&
+	          pps_document_model_get_page_rotation_generation (priv->model) == 0;
 	n_pages = pps_document_get_n_pages (document);
 
 	g_free (cache->height_to_page);
 	g_free (cache->dual_height_to_page);
 
 	cache->rotation = rotation;
+	cache->page_rotation_generation = pps_document_model_get_page_rotation_generation (priv->model);
 	cache->dual_even_left = !pps_document_model_get_dual_page_odd_pages_left (priv->model);
 	cache->height_to_page = g_new0 (gdouble, n_pages + 1);
 	cache->dual_height_to_page = g_new0 (gdouble, n_pages + 2);
@@ -287,9 +294,10 @@ pps_view_build_height_to_page_cache (PpsView *view,
 		} else {
 			if (i < n_pages) {
 				gdouble w, h;
+				gboolean page_swap = pps_document_model_get_effective_page_rotation (priv->model, i) % 180 == 90;
 
 				pps_document_get_page_size (document, i, &w, &h);
-				page_height = swap ? w : h;
+				page_height = page_swap ? w : h;
 			} else {
 				page_height = 0;
 			}
@@ -300,9 +308,10 @@ pps_view_build_height_to_page_cache (PpsView *view,
 
 	if (cache->dual_even_left && !uniform) {
 		gdouble w, h;
+		gboolean page_swap = pps_document_model_get_effective_page_rotation (priv->model, 0) % 180 == 90;
 
 		pps_document_get_page_size (document, 0, &w, &h);
-		saved_height = swap ? w : h;
+		saved_height = page_swap ? w : h;
 	} else {
 		saved_height = 0;
 	}
@@ -316,18 +325,20 @@ pps_view_build_height_to_page_cache (PpsView *view,
 		} else {
 			if (i + 1 < n_pages) {
 				gdouble w, h;
+				gboolean page_swap = pps_document_model_get_effective_page_rotation (priv->model, i + 1) % 180 == 90;
 
 				pps_document_get_page_size (document, i + 1, &w, &h);
-				next_page_height = swap ? w : h;
+				next_page_height = page_swap ? w : h;
 			} else {
 				next_page_height = 0;
 			}
 
 			if (i < n_pages) {
 				gdouble w, h;
+				gboolean page_swap = pps_document_model_get_effective_page_rotation (priv->model, i) % 180 == 90;
 
 				pps_document_get_page_size (document, i, &w, &h);
-				page_height = swap ? w : h;
+				page_height = page_swap ? w : h;
 			} else {
 				page_height = 0;
 			}
@@ -391,6 +402,7 @@ pps_view_get_height_to_page (PpsView *view,
 
 	cache = priv->height_to_page_cache;
 	if (cache->rotation != pps_document_model_get_rotation (priv->model) ||
+	    cache->page_rotation_generation != pps_document_model_get_page_rotation_generation (priv->model) ||
 	    cache->dual_even_left != !pps_document_model_get_dual_page_odd_pages_left (priv->model)) {
 		pps_view_build_height_to_page_cache (view, cache);
 	}
@@ -909,7 +921,7 @@ compute_scroll_increment (PpsView *view,
 
 		cairo_region_get_rectangle (region, 0, &rect);
 		pps_page = pps_document_get_page (document, page);
-		rc = pps_render_context_new (pps_page, pps_document_model_get_rotation (priv->model), 0., PPS_RENDER_ANNOTS_ALL);
+		rc = pps_render_context_new (pps_page, pps_document_model_get_effective_page_rotation (priv->model, page), 0., PPS_RENDER_ANNOTS_ALL);
 		pps_render_context_set_target_size (rc,
 		                                    page_area.width,
 		                                    page_area.height);
@@ -1210,7 +1222,7 @@ pps_view_get_page_size (PpsView *view,
 	_get_page_size_for_scale_and_rotation (pps_document_model_get_document (priv->model),
 	                                       page,
 	                                       pps_document_model_get_scale (priv->model),
-	                                       pps_document_model_get_rotation (priv->model),
+	                                       pps_document_model_get_effective_page_rotation (priv->model, page),
 	                                       page_width,
 	                                       page_height);
 }
@@ -1361,7 +1373,7 @@ get_doc_page_size (PpsView *view,
 {
 	double w, h;
 	PpsViewPrivate *priv = GET_PRIVATE (view);
-	gint rotation = pps_document_model_get_rotation (priv->model);
+	gint rotation = pps_document_model_get_effective_page_rotation (priv->model, page);
 
 	pps_document_get_page_size (pps_document_model_get_document (priv->model), page, &w, &h);
 	if (rotation == 0 || rotation == 180) {
@@ -1420,7 +1432,7 @@ pps_view_get_point_on_page (PpsView *view,
 	pps_document_get_page_size (document, priv->current_page,
 	                            &width, &height);
 
-	switch (pps_document_model_get_rotation (priv->model)) {
+	switch (pps_document_model_get_effective_page_rotation (priv->model, page_index)) {
 	case 0:
 		point_on_page.x = x;
 		point_on_page.y = y;
@@ -1506,7 +1518,7 @@ transform_page_point_by_rotation_scale (PpsView *view,
 	double x, y, view_x, view_y, scale;
 	PpsViewPrivate *priv = GET_PRIVATE (view);
 
-	switch (pps_document_model_get_rotation (priv->model)) {
+	switch (pps_document_model_get_effective_page_rotation (priv->model, page)) {
 	case 0:
 		x = point_on_page->x;
 		y = point_on_page->y;
@@ -1573,7 +1585,7 @@ _pps_view_transform_doc_rect_to_view_rect (PpsView *view,
 	double x, y, w, h, scale;
 	PpsViewPrivate *priv = GET_PRIVATE (view);
 
-	switch (pps_document_model_get_rotation (priv->model)) {
+	switch (pps_document_model_get_effective_page_rotation (priv->model, page)) {
 	case 0:
 		x = doc_rect->x1;
 		y = doc_rect->y1;
@@ -1700,7 +1712,7 @@ get_page_point_from_offset (PpsView *view,
 
 	get_doc_page_size (view, page, &width, &height);
 	scale = pps_document_model_get_scale (priv->model);
-	rotation = pps_document_model_get_rotation (priv->model);
+	rotation = pps_document_model_get_effective_page_rotation (priv->model, page);
 
 	x_offset = x_offset / scale;
 	y_offset = y_offset / scale;
@@ -2269,7 +2281,7 @@ handle_link_preview (PpsView *view)
 	scale = pps_document_model_get_scale (priv->model);
 	priv->link_preview.job = pps_job_thumbnail_texture_new (pps_document_model_get_document (priv->model),
 	                                                        link_dest_page,
-	                                                        pps_document_model_get_rotation (priv->model),
+	                                                        pps_document_model_get_effective_page_rotation (priv->model, link_dest_page),
 	                                                        scale * device_scale);
 
 	link_dest_doc.x = pps_link_dest_get_left (dest, NULL);
@@ -5081,7 +5093,7 @@ cursor_clear_selection (PpsView *view,
 		PpsRenderContext *rc;
 		PpsPage *page;
 		gdouble scale = pps_document_model_get_scale (priv->model);
-		gint rotation = pps_document_model_get_rotation (priv->model);
+		gint rotation = pps_document_model_get_effective_page_rotation (priv->model, selection->page);
 		PpsDocument *document = pps_document_model_get_document (priv->model);
 
 		page = pps_document_get_page (document, selection->page);
@@ -6284,13 +6296,11 @@ pps_view_document_changed_cb (PpsDocumentModel *model,
 }
 
 static void
-pps_view_rotation_changed_cb (PpsDocumentModel *model,
-                              GParamSpec *pspec,
-                              PpsView *view)
+pps_view_handle_rotation_change (PpsView *view,
+                                 gboolean should_clear_selection)
 {
-	gint rotation = pps_document_model_get_rotation (model);
-	PpsDocument *document = pps_document_model_get_document (model);
 	PpsViewPrivate *priv = GET_PRIVATE (view);
+	PpsDocument *document = pps_document_model_get_document (priv->model);
 
 	if (!document)
 		return;
@@ -6303,8 +6313,27 @@ pps_view_rotation_changed_cb (PpsDocumentModel *model,
 	pps_view_remove_all (view);
 	view_update_scale_limits (view);
 
-	if (rotation != 0)
+	if (should_clear_selection)
 		clear_selection (view);
+}
+
+static void
+pps_view_rotation_changed_cb (PpsDocumentModel *model,
+                              GParamSpec *pspec,
+                              PpsView *view)
+{
+	gint rotation = pps_document_model_get_rotation (model);
+
+	pps_view_handle_rotation_change (view, rotation != 0);
+}
+
+static void
+pps_view_page_rotation_changed_cb (PpsDocumentModel *model,
+                                   gint page,
+                                   gint rotation,
+                                   PpsView *view)
+{
+	pps_view_handle_rotation_change (view, TRUE);
 }
 
 static void
@@ -6443,6 +6472,9 @@ pps_view_set_model (PpsView *view,
 	g_signal_connect (priv->model, "notify::rotation",
 	                  G_CALLBACK (pps_view_rotation_changed_cb),
 	                  view);
+	g_signal_connect (priv->model, "page-rotation-changed",
+	                  G_CALLBACK (pps_view_page_rotation_changed_cb),
+	                  view);
 	g_signal_connect (priv->model, "notify::sizing-mode",
 	                  G_CALLBACK (pps_view_sizing_mode_changed_cb),
 	                  view);
@@ -6490,7 +6522,7 @@ pps_view_reload_page (PpsView *view,
 	pps_pixbuf_cache_reload_page (priv->pixbuf_cache,
 	                              region,
 	                              page,
-	                              pps_document_model_get_rotation (priv->model),
+	                              pps_document_model_get_effective_page_rotation (priv->model, page),
 	                              pps_document_model_get_scale (priv->model));
 }
 

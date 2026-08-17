@@ -75,7 +75,7 @@ pps_overlay_form_field_button_toggle (PpsOverlayForm *view,
 	pps_pixbuf_cache_reload_page (priv->pixbuf_cache,
 	                              NULL,
 	                              priv->field->page->index,
-	                              pps_document_model_get_rotation (priv->model),
+	                              pps_document_model_get_effective_page_rotation (priv->model, priv->field->page->index),
 	                              pps_document_model_get_scale (priv->model));
 }
 
@@ -142,7 +142,7 @@ pps_overlay_form_field_text_save (PpsOverlayForm *view,
 		pps_pixbuf_cache_reload_page (priv->pixbuf_cache,
 		                              NULL,
 		                              priv->field->page->index,
-		                              pps_document_model_get_rotation (priv->model),
+		                              pps_document_model_get_effective_page_rotation (priv->model, priv->field->page->index),
 		                              pps_document_model_get_scale (priv->model));
 	}
 }
@@ -316,7 +316,7 @@ pps_overlay_form_field_choice_save (PpsOverlayForm *view,
 		pps_pixbuf_cache_reload_page (priv->pixbuf_cache,
 		                              NULL,
 		                              priv->field->page->index,
-		                              pps_document_model_get_rotation (priv->model),
+		                              pps_document_model_get_effective_page_rotation (priv->model, priv->field->page->index),
 		                              pps_document_model_get_scale (priv->model));
 	}
 }

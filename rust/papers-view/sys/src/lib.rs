@@ -1166,11 +1166,18 @@ unsafe extern "C" {
     pub fn pps_document_model_get_dual_page_odd_pages_left(
         model: *mut PpsDocumentModel,
     ) -> gboolean;
+    pub fn pps_document_model_get_effective_page_rotation(
+        model: *mut PpsDocumentModel,
+        page: c_int,
+    ) -> c_int;
     pub fn pps_document_model_get_inverted_colors(model: *mut PpsDocumentModel) -> gboolean;
     pub fn pps_document_model_get_max_scale(model: *mut PpsDocumentModel) -> c_double;
     pub fn pps_document_model_get_min_scale(model: *mut PpsDocumentModel) -> c_double;
     pub fn pps_document_model_get_page(model: *mut PpsDocumentModel) -> c_int;
     pub fn pps_document_model_get_page_layout(model: *mut PpsDocumentModel) -> PpsPageLayout;
+    pub fn pps_document_model_get_page_rotation(model: *mut PpsDocumentModel, page: c_int)
+    -> c_int;
+    pub fn pps_document_model_get_page_rotation_generation(model: *mut PpsDocumentModel) -> c_uint;
     pub fn pps_document_model_get_rotation(model: *mut PpsDocumentModel) -> c_int;
     pub fn pps_document_model_get_rtl(model: *mut PpsDocumentModel) -> gboolean;
     pub fn pps_document_model_get_scale(model: *mut PpsDocumentModel) -> c_double;
@@ -1202,6 +1209,11 @@ unsafe extern "C" {
         page_label: *const c_char,
     );
     pub fn pps_document_model_set_page_layout(model: *mut PpsDocumentModel, layout: PpsPageLayout);
+    pub fn pps_document_model_set_page_rotation(
+        model: *mut PpsDocumentModel,
+        page: c_int,
+        rotation: c_int,
+    );
     pub fn pps_document_model_set_rotation(model: *mut PpsDocumentModel, rotation: c_int);
     pub fn pps_document_model_set_rtl(model: *mut PpsDocumentModel, rtl: gboolean);
     pub fn pps_document_model_set_scale(model: *mut PpsDocumentModel, scale: c_double);

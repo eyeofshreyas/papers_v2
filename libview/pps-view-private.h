@@ -50,6 +50,7 @@ typedef enum {
 
 typedef struct _PpsHeightToPageCache {
 	gint rotation;
+	guint page_rotation_generation;
 	gboolean dual_even_left;
 	gdouble *height_to_page;
 	gdouble *dual_height_to_page;
