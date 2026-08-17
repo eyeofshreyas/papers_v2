@@ -150,6 +150,29 @@ pub fn reorder_pages(path: &Path, new_order: &[u32]) -> Result<(), String> {
     Ok(())
 }
 
+/// Writes a new PDF at `dest_path` containing only the given 0-based
+/// `indices` from `src_path`. Never modifies `src_path`.
+pub fn extract_pages(src_path: &Path, dest_path: &Path, indices: &[u32]) -> Result<(), String> {
+    if indices.is_empty() {
+        return Err("no pages selected".to_string());
+    }
+
+    let src = qpdf::QPdf::read(src_path).map_err(|e| e.to_string())?;
+    let pages = src.get_pages().map_err(|e| e.to_string())?;
+
+    let dest = qpdf::QPdf::empty();
+    for &idx in indices {
+        let page = pages
+            .get(idx as usize)
+            .ok_or_else(|| format!("page {idx} out of range"))?;
+        dest.add_page(page, false).map_err(|e| e.to_string())?;
+    }
+
+    dest.writer().write(dest_path).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 /// Parses a 1-based page-range string like `"1-3,5,8-10"` (as shown to
 /// the user) into validated, deduplicated, sorted 0-based page indices
 /// within `0..n_pages`.
@@ -410,6 +433,44 @@ mod tests {
         make_multi_page_pdf(&source, &target, 3);
 
         assert!(reorder_pages(&target, &[0]).is_err());
+
+        fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn extract_pages_writes_subset_leaves_source_untouched() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/utf16le-annot.pdf");
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-extract-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let src = tmp_dir.join("source.pdf");
+        fs::copy(&source, &src).unwrap();
+        let dest = tmp_dir.join("extracted.pdf");
+
+        let original_pages = qpdf::QPdf::read(&src).unwrap().get_num_pages().unwrap();
+
+        extract_pages(&src, &dest, &[0]).expect("extract_pages should succeed");
+
+        let extracted = qpdf::QPdf::read(&dest).expect("extracted file must be valid PDF");
+        assert_eq!(extracted.get_num_pages().unwrap(), 1);
+
+        let src_after = qpdf::QPdf::read(&src).unwrap();
+        assert_eq!(src_after.get_num_pages().unwrap(), original_pages);
+
+        fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn extract_pages_rejects_empty_selection() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/utf16le-annot.pdf");
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-extract-empty-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let src = tmp_dir.join("source.pdf");
+        fs::copy(&source, &src).unwrap();
+        let dest = tmp_dir.join("extracted.pdf");
+
+        assert!(extract_pages(&src, &dest, &[]).is_err());
 
         fs::remove_dir_all(&tmp_dir).ok();
     }
