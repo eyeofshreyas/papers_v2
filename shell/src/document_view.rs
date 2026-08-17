@@ -55,6 +55,8 @@ mod imp {
         #[template_child]
         pub(super) zoom_fit_best_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
+        pub(super) zoom_label: TemplateChild<gtk::Label>,
+        #[template_child]
         pub(super) banner: TemplateChild<adw::Banner>,
 
         #[template_child]
@@ -409,14 +411,16 @@ mod imp {
                 self.model.is_dual_page_odd_pages_left(),
             );
 
+            // A `Free` (manually zoomed) sizing mode is a fixed scale tied to the
+            // document and window size it was set in, not a sensible default for
+            // documents opened later. Only persist named, resolution-independent
+            // modes as the global default; per-file zoom is remembered separately
+            // via that file's own metadata.
             let sizing_mode = self.model.sizing_mode();
-            let _ = self
-                .default_settings
-                .set_enum("sizing-mode", sizing_mode.into_glib());
-            if sizing_mode == SizingMode::Free {
-                let zoom = self.model.scale();
-                let dpi = Document::misc_get_widget_dpi(self.obj().as_ref());
-                let _ = self.default_settings.set_double("zoom", zoom * 72. / dpi);
+            if sizing_mode != SizingMode::Free {
+                let _ = self
+                    .default_settings
+                    .set_enum("sizing-mode", sizing_mode.into_glib());
             }
 
             let _ = self

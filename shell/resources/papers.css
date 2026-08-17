@@ -71,6 +71,10 @@ pps-view.inverted {
     padding: 3px;
 }
 
+.box-circular > revealer > button {
+    padding: 3px;
+}
+
 .box-circular > button {
     padding: 3px;
 }

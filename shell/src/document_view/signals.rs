@@ -691,6 +691,12 @@ impl imp::PpsDocumentView {
         self.set_action_enabled("zoom-in", self.view.can_zoom_in());
         self.set_action_enabled("zoom-out", self.view.can_zoom_out());
 
+        // scale == 1.0 is the app's own definition of 100% (see the Ctrl+0
+        // shortcut, which resets scale to 1.), so this matches what "reset
+        // zoom" actually resets to, not physical on-screen size.
+        self.zoom_label
+            .set_label(&format!("{}%", (model.scale() * 100.).round()));
+
         if let Some(metadata) = self.metadata()
             && is_free
             && !self.is_empty()

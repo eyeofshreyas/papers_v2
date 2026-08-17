@@ -250,10 +250,12 @@ template $PpsDocumentView: Adw.BreakpointBin {
             Box zoom_toolbar {
               styles [
                 "zoom-overlay",
+                "box-circular",
+                "card",
               ]
 
               orientation: vertical;
-              spacing: 9;
+              spacing: 2;
               margin-top: 18;
               margin-bottom: 70;
               margin-start: 18;
@@ -261,13 +263,23 @@ template $PpsDocumentView: Adw.BreakpointBin {
               halign: end;
               valign: end;
 
+              Button {
+                styles [
+                  "circular",
+                ]
+
+                icon-name: "object-rotate-right-symbolic";
+                action-name: "doc.rotate-right";
+                tooltip-text: _("Rotate");
+                halign: end;
+              }
+
               Revealer zoom_fit_best_revealer {
                 transition-type: crossfade;
 
                 child: Button {
                   styles [
                     "circular",
-                    "card",
                   ]
 
                   icon-name: "zoom-fit-best-symbolic";
@@ -279,16 +291,9 @@ template $PpsDocumentView: Adw.BreakpointBin {
                 halign: end;
               }
 
-              Separator {
-                styles [
-                  "spacer",
-                ]
-              }
-
               Button {
                 styles [
                   "circular",
-                  "card",
                 ]
 
                 icon-name: "zoom-in-symbolic";
@@ -298,10 +303,22 @@ template $PpsDocumentView: Adw.BreakpointBin {
                 halign: end;
               }
 
+              Label zoom_label {
+                styles [
+                  "caption",
+                  "dim-label",
+                  "numeric",
+                ]
+
+                label: "100%";
+                halign: center;
+                margin-top: 2;
+                margin-bottom: 2;
+              }
+
               Button {
                 styles [
                   "circular",
-                  "card",
                 ]
 
                 icon-name: "zoom-out-symbolic";
@@ -309,12 +326,6 @@ template $PpsDocumentView: Adw.BreakpointBin {
                 tooltip-text: _("Zoom Out");
                 sensitive: bind view.can-zoom-out;
                 halign: end;
-              }
-
-              Separator {
-                styles [
-                  "spacer",
-                ]
               }
             }
 
