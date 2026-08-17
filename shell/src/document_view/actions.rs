@@ -180,6 +180,20 @@ impl imp::PpsDocumentView {
                     }
                 ))
                 .build(),
+            gio::ActionEntryBuilder::new("delete-pages")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_delete_pages(None)
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("delete-page")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_delete_pages(Some(obj.rotate_page_target.get()))
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("show-properties")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]
@@ -1168,6 +1182,105 @@ impl imp::PpsDocumentView {
                 let message = formatx!(gettext("Compression failed: {}"), e)
                     .expect("Wrong format in translated string");
 
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
+    }
+
+    fn cmd_delete_pages(&self, preselect: Option<i32>) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before deleting pages."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
+        let Some(document) = self.document() else {
+            return;
+        };
+        let n_pages = document.n_pages();
+
+        let entry = adw::EntryRow::builder()
+            .title(gettext("Pages (e.g. 1-3,5,8-10)"))
+            .build();
+
+        if let Some(page) = preselect {
+            entry.set_text(&(page + 1).to_string());
+        }
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&entry);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Delete Pages"))
+            .body(gettext(
+                "Removes the given pages from the document and saves it. This cannot be undone.",
+            ))
+            .extra_child(&group)
+            .default_response("delete")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("delete", &gettext("_Delete")),
+        ]);
+        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.set_response_enabled("delete", preselect.is_some());
+
+        entry.connect_changed(glib::clone!(
+            #[weak]
+            dialog,
+            move |entry| {
+                dialog.set_response_enabled("delete", !entry.text().is_empty());
+            }
+        ));
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                entry,
+                move |_, response| {
+                    if response == "delete" {
+                        obj.apply_delete_pages(&entry.text(), n_pages);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn apply_delete_pages(&self, input: &str, n_pages: i32) {
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let indices = match crate::pdf_mutation::parse_page_ranges(input, n_pages as u32) {
+            Ok(indices) => indices,
+            Err(e) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&e));
+                return;
+            }
+        };
+
+        match crate::pdf_mutation::delete_pages(&path, &indices) {
+            Ok(()) => {
+                let message = formatx!(gettext("Deleted {} page(s)"), indices.len())
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Delete failed: {}"), e)
+                    .expect("Wrong format in translated string");
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
         }
