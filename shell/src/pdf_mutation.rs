@@ -276,6 +276,35 @@ mod tests {
         dest_pdf.writer().write(dest).unwrap();
     }
 
+    /// Tags each page of the PDF at `path` (in place) with a
+    /// `/PapersTestMarker` integer key starting at `start` — lets tests
+    /// assert actual post-mutation page order, not just page count.
+    fn tag_pages(path: &Path, start: i64) {
+        let pdf = qpdf::QPdf::read(path).unwrap();
+        let pages = pdf.get_pages().unwrap();
+        for (i, page) in pages.iter().enumerate() {
+            page.set("/PapersTestMarker", pdf.new_integer(start + i as i64));
+        }
+        let writer = pdf.writer();
+        let tmp_path = path.with_extension("tagged.pdf");
+        writer.write(&tmp_path).unwrap();
+        fs::rename(&tmp_path, path).unwrap();
+    }
+
+    /// Reads the `/PapersTestMarker` sequence from each page of the PDF at
+    /// `path`, in page order.
+    fn read_markers(path: &Path) -> Vec<i64> {
+        let pdf = qpdf::QPdf::read(path).unwrap();
+        pdf.get_pages()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                let obj: qpdf::QPdfScalar = p.get("/PapersTestMarker").unwrap().into();
+                obj.as_i64()
+            })
+            .collect()
+    }
+
     /// Exercises `compress()` against a real PDF end-to-end: the file still
     /// parses as valid PDF afterward (no corruption from the temp-file-and-
     /// rename swap), and its reported page count is unchanged.
@@ -519,18 +548,18 @@ mod tests {
         fs::create_dir_all(&tmp_dir).unwrap();
         let target = tmp_dir.join("target.pdf");
         let insert = tmp_dir.join("insert.pdf");
-        fs::copy(&source, &target).unwrap();
-        fs::copy(&source, &insert).unwrap();
+        make_multi_page_pdf(&source, &target, 2);
+        make_multi_page_pdf(&source, &insert, 2);
+        tag_pages(&target, 100);
+        tag_pages(&insert, 200);
 
-        let target_pages = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
-        let insert_pages = qpdf::QPdf::read(&insert).unwrap().get_num_pages().unwrap();
+        merge_pages(&target, &insert, 1).expect("merge_pages should succeed");
 
-        merge_pages(&target, &insert, 0).expect("merge_pages should succeed");
-
-        let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
+        let markers = read_markers(&target);
         assert_eq!(
-            reopened.get_num_pages().unwrap(),
-            target_pages + insert_pages
+            markers,
+            vec![100, 200, 201, 101],
+            "foreign pages not inserted at the right position/order"
         );
 
         fs::remove_dir_all(&tmp_dir).ok();
@@ -544,18 +573,18 @@ mod tests {
         fs::create_dir_all(&tmp_dir).unwrap();
         let target = tmp_dir.join("target.pdf");
         let insert = tmp_dir.join("insert.pdf");
-        fs::copy(&source, &target).unwrap();
-        fs::copy(&source, &insert).unwrap();
-
-        let target_pages = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
-        let insert_pages = qpdf::QPdf::read(&insert).unwrap().get_num_pages().unwrap();
+        make_multi_page_pdf(&source, &target, 2);
+        make_multi_page_pdf(&source, &insert, 2);
+        tag_pages(&target, 100);
+        tag_pages(&insert, 200);
 
         merge_pages(&target, &insert, 9999).expect("merge_pages should succeed");
 
-        let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
+        let markers = read_markers(&target);
         assert_eq!(
-            reopened.get_num_pages().unwrap(),
-            target_pages + insert_pages
+            markers,
+            vec![100, 101, 200, 201],
+            "foreign pages not appended in order at the end"
         );
 
         fs::remove_dir_all(&tmp_dir).ok();
