@@ -444,7 +444,7 @@ mod tests {
             std::env::temp_dir().join(format!("papers-extract-test-{}", std::process::id()));
         fs::create_dir_all(&tmp_dir).unwrap();
         let src = tmp_dir.join("source.pdf");
-        fs::copy(&source, &src).unwrap();
+        make_multi_page_pdf(&source, &src, 3);
         let dest = tmp_dir.join("extracted.pdf");
 
         let original_pages = qpdf::QPdf::read(&src).unwrap().get_num_pages().unwrap();
