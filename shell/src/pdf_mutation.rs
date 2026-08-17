@@ -120,6 +120,36 @@ pub fn crop_pages(path: &Path, indices: &[u32], margins: &CropMargins) -> Result
     Ok(())
 }
 
+/// Rewrites the page tree of the PDF at `path` into `new_order`, a
+/// permutation of `0..n_pages` (0-based indices into the *current*
+/// page order), in place.
+pub fn reorder_pages(path: &Path, new_order: &[u32]) -> Result<(), String> {
+    let pdf = qpdf::QPdf::read(path).map_err(|e| e.to_string())?;
+    let pages = pdf.get_pages().map_err(|e| e.to_string())?;
+
+    if new_order.len() != pages.len() {
+        return Err("page order does not match the document's page count".to_string());
+    }
+
+    for page in &pages {
+        pdf.remove_page(page).map_err(|e| e.to_string())?;
+    }
+
+    for &idx in new_order {
+        let page = pages
+            .get(idx as usize)
+            .ok_or_else(|| format!("page {idx} out of range"))?;
+        pdf.add_page(page, false).map_err(|e| e.to_string())?;
+    }
+
+    let writer = pdf.writer();
+    let tmp_path = path.with_extension("papers-reorder-tmp");
+    writer.write(&tmp_path).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 /// Parses a 1-based page-range string like `"1-3,5,8-10"` (as shown to
 /// the user) into validated, deduplicated, sorted 0-based page indices
 /// within `0..n_pages`.
@@ -319,6 +349,43 @@ mod tests {
             right: 10000.0,
         };
         assert!(crop_pages(&target, &[0], &margins).is_err());
+
+        fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn reorder_pages_applies_permutation() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/utf16le-annot.pdf");
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-reorder-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let target = tmp_dir.join("copy.pdf");
+        make_multi_page_pdf(&source, &target, 4);
+
+        let n = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
+        assert!(n >= 2, "test PDF needs at least 2 pages");
+
+        let mut reversed: Vec<u32> = (0..n).collect();
+        reversed.reverse();
+
+        reorder_pages(&target, &reversed).expect("reorder_pages should succeed");
+
+        let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
+        assert_eq!(reopened.get_num_pages().unwrap(), n);
+
+        fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn reorder_pages_rejects_wrong_length() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/utf16le-annot.pdf");
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-reorder-bad-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let target = tmp_dir.join("copy.pdf");
+        make_multi_page_pdf(&source, &target, 3);
+
+        assert!(reorder_pages(&target, &[0]).is_err());
 
         fs::remove_dir_all(&tmp_dir).ok();
     }
