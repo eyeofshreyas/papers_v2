@@ -194,6 +194,20 @@ impl imp::PpsDocumentView {
                     move |_, _, _| obj.cmd_delete_pages(Some(obj.rotate_page_target.get()))
                 ))
                 .build(),
+            gio::ActionEntryBuilder::new("crop-pages")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_crop_pages(None)
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("crop-page")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_crop_pages(Some(obj.rotate_page_target.get()))
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("show-properties")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]
@@ -1280,6 +1294,134 @@ impl imp::PpsDocumentView {
             }
             Err(e) => {
                 let message = formatx!(gettext("Delete failed: {}"), e)
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
+    }
+
+    fn cmd_crop_pages(&self, preselect: Option<i32>) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before cropping pages."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
+        let Some(document) = self.document() else {
+            return;
+        };
+        let n_pages = document.n_pages();
+
+        let entry = adw::EntryRow::builder()
+            .title(gettext("Pages (e.g. 1-3,5,8-10)"))
+            .build();
+
+        if let Some(page) = preselect {
+            entry.set_text(&(page + 1).to_string());
+        }
+
+        let top_row = adw::SpinRow::with_range(0.0, 500.0, 1.0);
+        top_row.set_title(&gettext("Top Margin (pt)"));
+        let bottom_row = adw::SpinRow::with_range(0.0, 500.0, 1.0);
+        bottom_row.set_title(&gettext("Bottom Margin (pt)"));
+        let left_row = adw::SpinRow::with_range(0.0, 500.0, 1.0);
+        left_row.set_title(&gettext("Left Margin (pt)"));
+        let right_row = adw::SpinRow::with_range(0.0, 500.0, 1.0);
+        right_row.set_title(&gettext("Right Margin (pt)"));
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&entry);
+        group.add(&top_row);
+        group.add(&bottom_row);
+        group.add(&left_row);
+        group.add(&right_row);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Crop Pages"))
+            .body(gettext(
+                "Shrinks the visible area of the given pages by the specified margins, then saves the document.",
+            ))
+            .extra_child(&group)
+            .default_response("crop")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("crop", &gettext("_Crop"))]);
+        dialog.set_response_appearance("crop", adw::ResponseAppearance::Suggested);
+        dialog.set_response_enabled("crop", preselect.is_some());
+
+        entry.connect_changed(glib::clone!(
+            #[weak]
+            dialog,
+            move |entry| {
+                dialog.set_response_enabled("crop", !entry.text().is_empty());
+            }
+        ));
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                entry,
+                #[strong]
+                top_row,
+                #[strong]
+                bottom_row,
+                #[strong]
+                left_row,
+                #[strong]
+                right_row,
+                move |_, response| {
+                    if response == "crop" {
+                        let margins = crate::pdf_mutation::CropMargins {
+                            top: top_row.value(),
+                            bottom: bottom_row.value(),
+                            left: left_row.value(),
+                            right: right_row.value(),
+                        };
+                        obj.apply_crop_pages(&entry.text(), n_pages, &margins);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn apply_crop_pages(
+        &self,
+        input: &str,
+        n_pages: i32,
+        margins: &crate::pdf_mutation::CropMargins,
+    ) {
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let indices = match crate::pdf_mutation::parse_page_ranges(input, n_pages as u32) {
+            Ok(indices) => indices,
+            Err(e) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&e));
+                return;
+            }
+        };
+
+        match crate::pdf_mutation::crop_pages(&path, &indices, margins) {
+            Ok(()) => {
+                let message = formatx!(gettext("Cropped {} page(s)"), indices.len())
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Crop failed: {}"), e)
                     .expect("Wrong format in translated string");
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
