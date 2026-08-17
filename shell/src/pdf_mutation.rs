@@ -34,6 +34,35 @@ pub fn compress(path: &Path) -> Result<(u64, u64), String> {
     Ok((original_size, compressed_size))
 }
 
+/// Removes the given 0-based page indices from the PDF at `path`, in
+/// place. Refuses to remove every page.
+pub fn delete_pages(path: &Path, indices: &[u32]) -> Result<(), String> {
+    let pdf = qpdf::QPdf::read(path).map_err(|e| e.to_string())?;
+    let pages = pdf.get_pages().map_err(|e| e.to_string())?;
+
+    let mut sorted: Vec<u32> = indices.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+
+    if sorted.len() >= pages.len() {
+        return Err("cannot delete every page of the document".to_string());
+    }
+
+    for &idx in &sorted {
+        let page = pages
+            .get(idx as usize)
+            .ok_or_else(|| format!("page {idx} out of range"))?;
+        pdf.remove_page(page).map_err(|e| e.to_string())?;
+    }
+
+    let writer = pdf.writer();
+    let tmp_path = path.with_extension("papers-delete-tmp");
+    writer.write(&tmp_path).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 /// Parses a 1-based page-range string like `"1-3,5,8-10"` (as shown to
 /// the user) into validated, deduplicated, sorted 0-based page indices
 /// within `0..n_pages`.
@@ -142,5 +171,42 @@ mod tests {
     fn parse_page_ranges_rejects_empty() {
         assert!(parse_page_ranges("", 10).is_err());
         assert!(parse_page_ranges("  ", 10).is_err());
+    }
+
+    #[test]
+    fn delete_pages_removes_selected_pages() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/utf16le-annot.pdf");
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-delete-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let target = tmp_dir.join("copy.pdf");
+        fs::copy(&source, &target).unwrap();
+
+        let original_pages = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
+        assert!(original_pages >= 2, "test PDF needs at least 2 pages");
+
+        delete_pages(&target, &[0]).expect("delete_pages should succeed");
+
+        let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
+        assert_eq!(reopened.get_num_pages().unwrap(), original_pages - 1);
+
+        fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn delete_pages_refuses_to_remove_every_page() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/utf16le-annot.pdf");
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-delete-all-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let target = tmp_dir.join("copy.pdf");
+        fs::copy(&source, &target).unwrap();
+
+        let n = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
+        let all_indices: Vec<u32> = (0..n).collect();
+
+        assert!(delete_pages(&target, &all_indices).is_err());
+
+        fs::remove_dir_all(&tmp_dir).ok();
     }
 }
