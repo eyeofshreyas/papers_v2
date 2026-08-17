@@ -215,6 +215,13 @@ impl imp::PpsDocumentView {
                     move |_, _, _| obj.cmd_apply_page_order()
                 ))
                 .build(),
+            gio::ActionEntryBuilder::new("extract-pages")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_extract_pages()
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("show-properties")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]
@@ -1471,6 +1478,115 @@ impl imp::PpsDocumentView {
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
         }
+    }
+
+    fn cmd_extract_pages(&self) {
+        let Some(document) = self.document() else {
+            return;
+        };
+        let n_pages = document.n_pages();
+
+        let entry = adw::EntryRow::builder()
+            .title(gettext("Pages (e.g. 1-3,5,8-10)"))
+            .build();
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&entry);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Extract Pages"))
+            .body(gettext("Saves the given pages as a new PDF file."))
+            .extra_child(&group)
+            .default_response("extract")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("extract", &gettext("E_xtract…")),
+        ]);
+        dialog.set_response_appearance("extract", adw::ResponseAppearance::Suggested);
+        dialog.set_response_enabled("extract", false);
+
+        entry.connect_changed(glib::clone!(
+            #[weak]
+            dialog,
+            move |entry| {
+                dialog.set_response_enabled("extract", !entry.text().is_empty());
+            }
+        ));
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                entry,
+                move |_, response| {
+                    if response == "extract" {
+                        obj.pick_extract_destination(&entry.text(), n_pages);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn pick_extract_destination(&self, input: &str, n_pages: i32) {
+        let indices = match crate::pdf_mutation::parse_page_ranges(input, n_pages as u32) {
+            Ok(indices) => indices,
+            Err(e) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&e));
+                return;
+            }
+        };
+
+        let Some(src_path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Extract Pages As…"))
+            .modal(true)
+            .initial_name("extracted.pdf")
+            .build();
+
+        self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            #[strong]
+            src_path,
+            #[strong]
+            indices,
+            async move {
+                let Ok(file) = dialog.save_future(Some(&obj.parent_window())).await else {
+                    return;
+                };
+
+                obj.file_dialog_save_folder(Some(&file), UserDirectory::Documents);
+
+                let Some(dest_path) = file.path() else {
+                    return;
+                };
+
+                match crate::pdf_mutation::extract_pages(&src_path, &dest_path, &indices) {
+                    Ok(()) => {
+                        let message = formatx!(gettext("Extracted {} page(s)"), indices.len())
+                            .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                    Err(e) => {
+                        let message = formatx!(gettext("Extract failed: {}"), e)
+                            .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                }
+            }
+        ));
     }
 
     fn cmd_save_image_as(&self) {
