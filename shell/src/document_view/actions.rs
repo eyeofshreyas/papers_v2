@@ -222,6 +222,13 @@ impl imp::PpsDocumentView {
                     move |_, _, _| obj.cmd_extract_pages()
                 ))
                 .build(),
+            gio::ActionEntryBuilder::new("merge-pdf")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_merge_pdf()
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("show-properties")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]
@@ -1587,6 +1594,113 @@ impl imp::PpsDocumentView {
                 }
             }
         ));
+    }
+
+    fn cmd_merge_pdf(&self) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before merging in another PDF."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
+        let Some(document) = self.document() else {
+            return;
+        };
+        let n_pages = document.n_pages();
+
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Merge PDF"))
+            .modal(true)
+            .build();
+        papers_document::Document::factory_add_filters(&dialog, papers_document::Document::NONE);
+
+        self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            async move {
+                let Ok(file) = dialog.open_future(Some(&obj.parent_window())).await else {
+                    return;
+                };
+
+                obj.file_dialog_save_folder(Some(&file), UserDirectory::Documents);
+
+                let Some(insert_path) = file.path() else {
+                    return;
+                };
+
+                obj.ask_merge_position(insert_path, n_pages);
+            }
+        ));
+    }
+
+    fn ask_merge_position(&self, insert_path: std::path::PathBuf, n_pages: i32) {
+        let position_row = adw::SpinRow::with_range(0.0, n_pages as f64, 1.0);
+        position_row.set_title(&gettext("Insert Before Page (end if left at max)"));
+        position_row.set_value(n_pages as f64);
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&position_row);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Merge PDF"))
+            .body(gettext(
+                "Inserts every page of the selected PDF into this document, then saves it.",
+            ))
+            .extra_child(&group)
+            .default_response("merge")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("merge", &gettext("_Merge")),
+        ]);
+        dialog.set_response_appearance("merge", adw::ResponseAppearance::Suggested);
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                position_row,
+                #[strong]
+                insert_path,
+                move |_, response| {
+                    if response == "merge" {
+                        obj.apply_merge_pdf(&insert_path, position_row.value() as u32);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn apply_merge_pdf(&self, insert_path: &std::path::Path, at_index: u32) {
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        match crate::pdf_mutation::merge_pages(&path, insert_path, at_index) {
+            Ok(()) => {
+                self.toast_overlay
+                    .add_toast(adw::Toast::new(&gettext("Merged PDF")));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Merge failed: {}"), e)
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
     }
 
     fn cmd_save_image_as(&self) {
