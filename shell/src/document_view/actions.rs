@@ -171,6 +171,15 @@ impl imp::PpsDocumentView {
                     }
                 ))
                 .build(),
+            gio::ActionEntryBuilder::new("compress-document")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| {
+                        obj.cmd_compress_document();
+                    }
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("show-properties")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]
@@ -1120,6 +1129,48 @@ impl imp::PpsDocumentView {
         }
 
         self.save_as();
+    }
+
+    fn cmd_compress_document(&self) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext(
+                    "Save your changes before compressing the document.",
+                ))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+
+            return;
+        }
+
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        match crate::pdf_mutation::compress(&path) {
+            Ok((before, after)) => {
+                // Translators: the two placeholders are human-readable file
+                // sizes, e.g. "1.2 MB"
+                let message = formatx!(
+                    gettext("Compressed from {} to {}"),
+                    glib::format_size(before),
+                    glib::format_size(after),
+                )
+                .expect("Wrong format in translated string");
+
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Compression failed: {}"), e)
+                    .expect("Wrong format in translated string");
+
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
     }
 
     fn cmd_save_image_as(&self) {

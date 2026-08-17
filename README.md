@@ -17,7 +17,7 @@ Everything else — sidebars, annotations, search, print, presentation mode, AI 
 **Dependencies** (Ubuntu/Debian):
 ```bash
 sudo apt install meson ninja-build rustc cargo \
-  libgtk-4-dev libadwaita-1-dev libpoppler-glib-dev \
+  libgtk-4-dev libadwaita-1-dev libpoppler-glib-dev libqpdf-dev \
   blueprint-compiler gettext
 ```
 

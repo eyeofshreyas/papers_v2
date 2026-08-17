@@ -18,6 +18,7 @@ mod keyring;
 mod loader_view;
 mod page_selector;
 mod password_view;
+mod pdf_mutation;
 mod progress_message_area;
 mod properties_fonts;
 mod properties_general;

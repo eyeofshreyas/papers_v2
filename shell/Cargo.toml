@@ -29,6 +29,7 @@ formatx = "0.2"
 ink-stroke-modeler-rs = { version = "0.1" }
 geo = { version = "0.30", default-features = false }
 geo-types = { version = "0.7", default-features = false }
+qpdf = "0.3"
 
 [dependencies.oo7]
 version = "0.6"
