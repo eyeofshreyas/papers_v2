@@ -362,16 +362,40 @@ mod tests {
         let target = tmp_dir.join("copy.pdf");
         make_multi_page_pdf(&source, &target, 4);
 
-        let n = qpdf::QPdf::read(&target).unwrap().get_num_pages().unwrap();
-        assert!(n >= 2, "test PDF needs at least 2 pages");
+        // Tag each page with its original index so we can verify the actual
+        // order after reorder_pages, not just that the page count survived.
+        {
+            let pdf = qpdf::QPdf::read(&target).unwrap();
+            let pages = pdf.get_pages().unwrap();
+            for (i, page) in pages.iter().enumerate() {
+                page.set("/PapersTestMarker", pdf.new_integer(i as i64));
+            }
+            let writer = pdf.writer();
+            let tagged_path = target.with_extension("tagged.pdf");
+            writer.write(&tagged_path).unwrap();
+            fs::rename(&tagged_path, &target).unwrap();
+        }
 
-        let mut reversed: Vec<u32> = (0..n).collect();
+        let mut reversed: Vec<u32> = (0..4).collect();
         reversed.reverse();
 
         reorder_pages(&target, &reversed).expect("reorder_pages should succeed");
 
         let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
-        assert_eq!(reopened.get_num_pages().unwrap(), n);
+        assert_eq!(reopened.get_num_pages().unwrap(), 4);
+
+        let markers: Vec<i64> = reopened
+            .get_pages()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                let obj: qpdf::QPdfScalar = p.get("/PapersTestMarker").unwrap().into();
+                obj.as_i64()
+            })
+            .collect();
+
+        let expected: Vec<i64> = reversed.iter().map(|&i| i as i64).collect();
+        assert_eq!(markers, expected, "page order was not actually applied");
 
         fs::remove_dir_all(&tmp_dir).ok();
     }
