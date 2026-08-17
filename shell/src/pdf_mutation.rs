@@ -72,23 +72,6 @@ pub fn delete_pages(path: &Path, indices: &[u32]) -> Result<(), String> {
     Ok(())
 }
 
-/// Gets the MediaBox for a page, walking up the page tree if needed.
-/// Returns the MediaBox array [x0, y0, x1, y1].
-fn get_media_box_from_tree(page: &qpdf::QPdfDictionary) -> Option<qpdf::QPdfArray> {
-    // Try to get MediaBox directly from the page
-    if let Some(media_box_obj) = page.get("MediaBox") {
-        return Some(media_box_obj.into());
-    }
-
-    // If not found, check parent
-    if let Some(parent_obj) = page.get("Parent") {
-        let parent: qpdf::QPdfDictionary = parent_obj.into();
-        return get_media_box_from_tree(&parent);
-    }
-
-    None
-}
-
 /// Shrinks the CropBox of the given 0-based page indices by `margins`
 /// (in PDF points), in place.
 pub fn crop_pages(path: &Path, indices: &[u32], margins: &CropMargins) -> Result<(), String> {
@@ -100,19 +83,10 @@ pub fn crop_pages(path: &Path, indices: &[u32], margins: &CropMargins) -> Result
             .get(idx as usize)
             .ok_or_else(|| format!("page {idx} out of range"))?;
 
-        // Try to get MediaBox from page tree; fall back to standard A4 size if not found
-        let media_box: qpdf::QPdfArray = match get_media_box_from_tree(&page) {
-            Some(mb) => mb,
-            None => {
-                // Use standard A4 size (595 x 842 points) as fallback
-                pdf.new_array_from([
-                    pdf.new_real(0.0, 2).into(),
-                    pdf.new_real(0.0, 2).into(),
-                    pdf.new_real(595.0, 2).into(),
-                    pdf.new_real(842.0, 2).into(),
-                ])
-            }
-        };
+        let media_box: qpdf::QPdfArray = page
+            .get("/MediaBox")
+            .ok_or_else(|| format!("page {idx} has no MediaBox"))?
+            .into();
 
         let x0: qpdf::QPdfScalar = media_box.get(0).ok_or("malformed MediaBox")?.into();
         let y0: qpdf::QPdfScalar = media_box.get(1).ok_or("malformed MediaBox")?.into();
@@ -135,7 +109,7 @@ pub fn crop_pages(path: &Path, indices: &[u32], margins: &CropMargins) -> Result
             pdf.new_real(new_y1, 2).into(),
         ]);
 
-        page.set("CropBox", new_box);
+        page.set("/CropBox", new_box);
     }
 
     let writer = pdf.writer();
@@ -324,7 +298,7 @@ mod tests {
 
         let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
         let page = reopened.get_page(0).unwrap();
-        assert!(page.has("CropBox"), "page 0 should have a CropBox set");
+        assert!(page.has("/CropBox"), "page 0 should have a CropBox set");
 
         fs::remove_dir_all(&tmp_dir).ok();
     }
