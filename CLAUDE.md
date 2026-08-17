@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## About this fork
+
+This repo is a fork of upstream [GNOME Papers](https://gitlab.gnome.org/GNOME/papers) that adds browser-style document tabs (`Ctrl+T` open, `Ctrl+W` close, `Ctrl+Tab`/`Ctrl+Shift+Tab` cycle, tab overview grid; files opened from the file manager/CLI join the running window as a new tab instead of spawning a new process). Everything else — sidebars, annotations, search, print, presentation mode, AI chat — is unchanged from upstream, so upstream Papers documentation/issues still apply there. The installed binary (`/usr/local/bin/papers`) takes priority over any system-installed Papers.
+
 ## Build System
 
 Papers uses **Meson** as its build system with Rust components managed through the workspace. The build directory is `build/` (already configured).
@@ -22,6 +26,10 @@ meson test -C build pps-jobs-test
 # Install (for system-wide)
 meson install -C build
 ```
+
+Other test targets exist besides `pps-jobs-test`: `cargo-test` (runs `cargo test -- --test-threads=1` for the shell), `validate-appdata`, `validate-<backend>-metainfo` (per backend), and `thumbnailer pdf`/`thumbnailer cbz`.
+
+Rust lint targets used in CI: `cd shell && cargo fmt --check`, and `meson compile -C build cargo-clippy` (runs `cargo clippy --no-deps -- -D warnings`).
 
 For rust-analyzer IDE support, use `meson devenv`:
 ```bash
@@ -60,9 +68,14 @@ nautilus/             Nautilus extension for document property pages
 The shell is a standard GNOME app pattern. Key modules:
 - `application.rs` — `PpsApplication`, app lifecycle
 - `window.rs` — `PpsWindow`, top-level window
-- `document_view.rs` — `PpsDocumentView`, central widget combining the view, sidebar, toolbar; owns the `DocumentModel`
+- `deps.rs` — central prelude; nearly every module does `use crate::deps::*`
+- `tab.rs` — per-tab document state (this fork's core addition)
+- `document_view.rs` — `PpsDocumentView`, central widget combining the view, sidebar, toolbar; owns the `DocumentModel`. Its submodules live in `document_view/`: `actions.rs`, `signals.rs`, `io.rs`, `print.rs`, `enums.rs`
 - `sidebar*.rs` — individual sidebar panels (links, thumbnails, annotations, layers, attachments, chat)
 - `sidebar_chat.rs` — AI chat panel using Ollama for local LLM inference against document text
+- `properties_*.rs` — document properties dialog (general, fonts, license, signatures, window)
+- `find_sidebar.rs`, `search_box.rs`, `page_selector.rs`, `password_view.rs`, `loader_view.rs`, `file_monitor.rs` — supporting UI/state for search, navigation, password-protected docs, and external file changes
+- `keyring.rs` — GNOME Keyring/oo7 integration, gated behind the `keyring` meson option
 
 ### UI files
 
@@ -111,11 +124,15 @@ Subsystem prefixes: `shell`, `libdocument`, `libview`, `libmisc`, `backends`, `b
 
 Notable options when configuring:
 - `-Dprofile=devel` — enables development app ID (`org.gnome.Papers.Devel`)
-- `-Dintrospection=enabled` — required for updating Rust bindings
-- `-Dpdf=enabled/disabled` — PDF backend (via poppler ≥ 25.07.0)
+- `-Dintrospection=enabled` — required for updating Rust bindings (default: `auto`)
+- `-Dpdf=enabled/disabled` — PDF backend (via poppler ≥ 25.07.0); sibling format backends `-Ddjvu=`, `-Dcomics=`, `-Dtiff=` all default to `auto`
 - `-Dfile_tests=true` — enables libview C tests
 - `-Dkeyring=enabled/disabled` — GNOME Keyring/oo7 integration
+- `-Dshell=false` / `-Dpreviewer=false` / `-Dthumbnailer=false` / `-Dnautilus=false` — disable individual components (all default `true`)
+- `-Dtests=false` — skip building tests entirely
+- `-Ddocumentation=false` — skip gi-docgen developer reference docs
+- `-Dsysprof=`, `-Dgtk_unix_print=`, `-Dspell_check=` — optional integrations, all default `auto`
 
 ## AI Chat Feature (active development)
 
-`shell/src/sidebar_chat.rs` and `shell/resources/pps-sidebar-chat.blp` implement an Ollama-based AI chat sidebar. It connects to `http://localhost:11434`, auto-starts the `ollama serve` process if needed, and uses the `gemma4` model. Document text context (up to 16 000 chars) is injected into the system prompt.
+`shell/src/sidebar_chat.rs` and `shell/resources/pps-sidebar-chat.blp` implement an Ollama-based AI chat sidebar. It connects to `http://localhost:11434` and auto-starts the `ollama serve` process if needed. Model selection checks installed Ollama models against a preference list (`gemma4` > `gemma3` > `gemma2` > `gemma`, matched by prefix) and uses the first one found; only if none are installed does it attempt to `ollama pull gemma4` — note `gemma4` is not a confirmed real Ollama tag, so on a fresh install this pull may fail (likely worth fixing to prefer `gemma3` as the pull target). Document text context (up to 16 000 chars) is injected into the system prompt.
