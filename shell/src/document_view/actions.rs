@@ -208,6 +208,13 @@ impl imp::PpsDocumentView {
                     move |_, _, _| obj.cmd_crop_pages(Some(obj.rotate_page_target.get()))
                 ))
                 .build(),
+            gio::ActionEntryBuilder::new("apply-page-order")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_apply_page_order()
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("show-properties")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]
@@ -1422,6 +1429,44 @@ impl imp::PpsDocumentView {
             }
             Err(e) => {
                 let message = formatx!(gettext("Crop failed: {}"), e)
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
+    }
+
+    fn cmd_apply_page_order(&self) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before saving the page order."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let order: Vec<u32> = self
+            .sidebar_thumbs
+            .current_order()
+            .into_iter()
+            .map(|p| p as u32)
+            .collect();
+
+        match crate::pdf_mutation::reorder_pages(&path, &order) {
+            Ok(()) => {
+                self.sidebar_thumbs.reset_order();
+                self.toast_overlay
+                    .add_toast(adw::Toast::new(&gettext("Page order saved")));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Save page order failed: {}"), e)
                     .expect("Wrong format in translated string");
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
