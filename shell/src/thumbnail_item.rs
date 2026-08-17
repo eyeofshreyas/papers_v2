@@ -1,5 +1,7 @@
 use crate::deps::*;
 
+use std::cell::Cell;
+
 mod imp {
     use super::*;
 
@@ -14,6 +16,10 @@ mod imp {
         binding: RefCell<Option<glib::Binding>>,
         #[property(get, set, nullable)]
         job: RefCell<Option<JobThumbnailTexture>>,
+        #[property(get, set)]
+        bookmarked: Cell<bool>,
+        #[property(get, set, nullable)]
+        bookmark_binding: RefCell<Option<glib::Binding>>,
     }
 
     #[glib::object_subclass]

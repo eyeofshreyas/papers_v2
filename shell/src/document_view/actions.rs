@@ -397,6 +397,27 @@ impl imp::PpsDocumentView {
                     move |_, _, _| obj.cmd_rotate_right()
                 ))
                 .build(),
+            gio::ActionEntryBuilder::new("rotate-page-left")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_rotate_page_left()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("rotate-page-right")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_rotate_page_right()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("toggle-bookmark-page")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_toggle_bookmark_page()
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("copy")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]
@@ -972,6 +993,25 @@ impl imp::PpsDocumentView {
 
     fn cmd_rotate_right(&self) {
         self.rotate(90);
+    }
+
+    fn rotate_page(&self, degree: i32) {
+        let page = self.rotate_page_target.get();
+        let rotation = self.model.page_rotation(page) + degree;
+        self.model.set_page_rotation(page, rotation);
+    }
+
+    fn cmd_rotate_page_left(&self) {
+        self.rotate_page(-90);
+    }
+
+    fn cmd_rotate_page_right(&self) {
+        self.rotate_page(90);
+    }
+
+    fn cmd_toggle_bookmark_page(&self) {
+        let page = self.rotate_page_target.get();
+        self.sidebar_thumbs.toggle_bookmark(page);
     }
 
     fn cmd_save_as(&self) {

@@ -1,7 +1,8 @@
 use crate::deps::*;
 
 use gdk::pango::{AttrList, WrapMode};
-use papers_view::{JobPriority, PageLayout};
+use papers_view::{JobPriority, Metadata, PageLayout};
+use std::collections::{HashMap, HashSet};
 
 /// The size used as pixel size of [gtk::Image]
 const THUMBNAIL_WIDTH: f64 = 180.0;
@@ -34,6 +35,8 @@ mod imp {
         pub(super) selection_model: TemplateChild<gtk::SingleSelection>,
         #[template_child]
         pub(super) factory: TemplateChild<gtk::SignalListItemFactory>,
+        #[template_child]
+        pub(super) popup: TemplateChild<gtk::PopoverMenu>,
         /// Switch of blank_head mode. When this mode is enabled. A blank page is
         /// inserted into the start of thumbnail list. We explicitly distinguish
         /// model index between page index due to support of this mode.
@@ -42,6 +45,15 @@ mod imp {
         pub(super) block_page_changed: Cell<bool>,
         pub(super) block_activate: Cell<bool>,
         pub(super) lru: RefCell<Option<LruCache<u32, PpsThumbnailItem>>>,
+        /// Doc-page indices the user has bookmarked, persisted via [Metadata].
+        pub(super) bookmarks: RefCell<HashSet<i32>>,
+        /// Store position (excluding blank-head offset) -> doc-page permutation
+        /// controlling the order thumbnails are *listed* in this sidebar. This
+        /// never affects the real document/page order, only how previews are
+        /// arranged here.
+        pub(super) order: RefCell<Vec<i32>>,
+        /// Reverse of [Self::order]: doc-page -> store position.
+        pub(super) order_index: RefCell<HashMap<i32, i32>>,
     }
 
     #[glib::object_subclass]
@@ -118,6 +130,14 @@ mod imp {
                     }
                 ));
 
+                model.connect_page_rotation_changed(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _page, _rotation| {
+                        obj.reload();
+                    }
+                ));
+
                 model.connect_page_layout_notify(glib::clone!(
                     #[weak(rename_to = obj)]
                     self,
@@ -185,6 +205,17 @@ mod imp {
                 .accessible_role(gtk::AccessibleRole::Presentation)
                 .build();
 
+            let bookmark_icon = gtk::Image::builder()
+                .icon_name("starred-symbolic")
+                .halign(gtk::Align::End)
+                .valign(gtk::Align::Start)
+                .visible(false)
+                .build();
+
+            let picture_overlay = gtk::Overlay::new();
+            picture_overlay.set_child(Some(&image));
+            picture_overlay.add_overlay(&bookmark_icon);
+
             let label = gtk::Label::builder()
                 .vexpand(true)
                 .valign(gtk::Align::End)
@@ -193,7 +224,102 @@ mod imp {
                 .wrap(true)
                 .build();
             box_.prepend(&label);
-            box_.prepend(&image);
+            box_.prepend(&picture_overlay);
+
+            let gesture = gtk::GestureClick::builder().button(0).build();
+
+            gesture.connect_pressed(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[weak]
+                item,
+                move |gesture, _, x, y| {
+                    if gesture.current_button() == gdk::BUTTON_SECONDARY {
+                        let model_index = item.position() as i32;
+                        let doc_page = obj.page_of_document(model_index);
+                        let document_view = obj
+                            .obj()
+                            .ancestor(PpsDocumentView::static_type())
+                            .and_downcast::<PpsDocumentView>()
+                            .unwrap();
+
+                        document_view.handle_page_popup(doc_page);
+
+                        let row = item.child().unwrap();
+                        let point = row
+                            .compute_point(
+                                &obj.popup.parent().unwrap(),
+                                &graphene::Point::new(x as f32, y as f32),
+                            )
+                            .unwrap();
+
+                        obj.popup.set_pointing_to(Some(&gdk::Rectangle::new(
+                            point.x() as i32,
+                            point.y() as i32,
+                            1,
+                            1,
+                        )));
+                        obj.popup.popup();
+                    }
+                }
+            ));
+
+            box_.add_controller(gesture);
+
+            let drag_source = gtk::DragSource::builder()
+                .actions(gdk::DragAction::MOVE)
+                .build();
+
+            drag_source.connect_prepare(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[weak]
+                item,
+                #[upgrade_or_default]
+                move |_, _, _| {
+                    let model_index = item.position() as i32;
+
+                    if obj.blank_head_mode() && model_index == 0 {
+                        return None;
+                    }
+
+                    let doc_page = obj.page_of_document(model_index);
+
+                    Some(gdk::ContentProvider::for_value(&doc_page.to_value()))
+                }
+            ));
+
+            box_.add_controller(drag_source);
+
+            let drop_target = gtk::DropTarget::new(glib::Type::I32, gdk::DragAction::MOVE);
+
+            drop_target.connect_drop(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[weak]
+                item,
+                #[upgrade_or_default]
+                move |_, value, _, _| {
+                    let model_index = item.position() as i32;
+
+                    if obj.blank_head_mode() && model_index == 0 {
+                        return false;
+                    }
+
+                    let Ok(source_doc_page) = value.get::<i32>() else {
+                        return false;
+                    };
+
+                    let target_doc_page = obj.page_of_document(model_index);
+
+                    obj.reorder(source_doc_page, target_doc_page);
+
+                    true
+                }
+            ));
+
+            box_.add_controller(drop_target);
+
             item.set_child(Some(&box_));
         }
 
@@ -246,7 +372,12 @@ mod imp {
             let item = list_item.item().and_downcast::<PpsThumbnailItem>().unwrap();
             let model_index = list_item.position() as i32;
             let box_ = list_item.child().unwrap();
-            let image = box_.first_child().and_downcast::<gtk::Picture>().unwrap();
+            let picture_overlay = box_.first_child().and_downcast::<gtk::Overlay>().unwrap();
+            let image = picture_overlay
+                .child()
+                .and_downcast::<gtk::Picture>()
+                .unwrap();
+            let bookmark_icon = image.next_sibling().and_downcast::<gtk::Image>().unwrap();
             let label = box_.last_child().and_downcast::<gtk::Label>().unwrap();
             let blank_head_mode = self.blank_head_mode();
 
@@ -257,6 +388,7 @@ mod imp {
             if blank_head_mode && model_index == 0 {
                 debug!("blank_head_mode and skip first page");
                 image.set_paintable(None::<gdk::Paintable>.as_ref());
+                bookmark_icon.set_visible(false);
                 list_item.set_selectable(false);
                 list_item.set_activatable(false);
                 return;
@@ -265,6 +397,12 @@ mod imp {
             let binding = item.bind_property("paintable", &image, "paintable").build();
 
             item.set_binding(Some(binding));
+
+            let bookmark_binding = item
+                .bind_property("bookmarked", &bookmark_icon, "visible")
+                .build();
+
+            item.set_bookmark_binding(Some(bookmark_binding));
 
             if let Some(paintable) = item.paintable() {
                 item.set_paintable(Some(&paintable));
@@ -297,6 +435,11 @@ mod imp {
                 if let Some(binding) = item.binding() {
                     binding.unbind();
                     item.set_binding(None::<glib::Binding>);
+                }
+
+                if let Some(binding) = item.bookmark_binding() {
+                    binding.unbind();
+                    item.set_bookmark_binding(None::<glib::Binding>);
                 }
 
                 // HACK: GtkGridView.scroll_to with SELECT flag set will trigger
@@ -472,39 +615,210 @@ mod imp {
 
         fn fill_list_store(&self) {
             self.list_store.remove_all();
+            self.load_bookmarks();
+
             if let Some(model) = self.obj().document_model()
                 && let Some(document) = model.document()
             {
+                self.load_order(document.n_pages());
+
                 let mut thumbnails = Vec::new();
 
                 if self.blank_head_mode() {
                     thumbnails.push(PpsThumbnailItem::default());
                 }
 
-                for i in 0..document.n_pages() {
-                    let label = document.page_label(i);
+                let bookmarks = self.bookmarks.borrow();
+                let order = self.order.borrow();
+
+                for &doc_page in order.iter() {
+                    let label = document.page_label(doc_page);
                     let item = PpsThumbnailItem::default();
                     item.set_text(label);
+                    item.set_bookmarked(bookmarks.contains(&doc_page));
                     thumbnails.push(item);
                 }
+
+                drop(bookmarks);
+                drop(order);
 
                 self.list_store.splice(0, 0, &thumbnails);
             }
         }
 
-        fn page_of_document(&self, store_index: i32) -> i32 {
-            if self.blank_head_mode() {
-                store_index - 1
-            } else {
-                store_index
+        fn metadata(&self) -> Option<Metadata> {
+            self.obj()
+                .native()
+                .and_downcast::<PpsWindow>()
+                .and_then(|w| w.metadata())
+        }
+
+        /// Load the thumbnail-list order for a document with `n_pages` pages,
+        /// falling back to identity order when there's no persisted order or
+        /// it doesn't parse as a valid permutation of `0..n_pages` (e.g. the
+        /// document changed page count since it was last saved).
+        fn load_order(&self, n_pages: i32) {
+            let mut order: Vec<i32> = (0..n_pages).collect();
+
+            if let Some(metadata) = self.metadata()
+                && let Some(s) = metadata.string("thumbnail-order")
+            {
+                let parsed: Vec<i32> = s.split(',').filter_map(|p| p.parse::<i32>().ok()).collect();
+
+                if parsed.len() == n_pages as usize {
+                    let mut seen = HashSet::new();
+                    let is_permutation = parsed
+                        .iter()
+                        .all(|&p| p >= 0 && p < n_pages && seen.insert(p));
+
+                    if is_permutation {
+                        order = parsed;
+                    }
+                }
+            }
+
+            self.order.replace(order);
+            self.rebuild_order_index();
+        }
+
+        fn rebuild_order_index(&self) {
+            let order_index = self
+                .order
+                .borrow()
+                .iter()
+                .enumerate()
+                .map(|(i, &doc_page)| (doc_page, i as i32))
+                .collect();
+
+            self.order_index.replace(order_index);
+        }
+
+        fn store_order(&self) {
+            if let Some(metadata) = self.metadata() {
+                let s = self
+                    .order
+                    .borrow()
+                    .iter()
+                    .map(|n| n.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+
+                metadata.set_string("thumbnail-order", &s);
             }
         }
 
-        fn index_of_store(&self, doc_page: i32) -> i32 {
-            if self.blank_head_mode() {
-                doc_page + 1
+        /// Move `source_doc_page`'s thumbnail to sit where `target_doc_page`'s
+        /// currently sits. This only reorders how pages are *listed* in this
+        /// sidebar — it never changes the document's real page order.
+        fn reorder(&self, source_doc_page: i32, target_doc_page: i32) {
+            if source_doc_page == target_doc_page || source_doc_page < 0 || target_doc_page < 0 {
+                return;
+            }
+
+            let mut order = self.order.borrow().clone();
+
+            let Some(source_pos) = order.iter().position(|&p| p == source_doc_page) else {
+                return;
+            };
+            let target_pos = order
+                .iter()
+                .position(|&p| p == target_doc_page)
+                .unwrap_or(source_pos);
+
+            let page = order.remove(source_pos);
+            order.insert(target_pos, page);
+
+            self.order.replace(order);
+            self.rebuild_order_index();
+            self.store_order();
+
+            self.lru.borrow_mut().as_mut().unwrap().clear();
+            self.fill_list_store();
+        }
+
+        fn load_bookmarks(&self) {
+            let mut bookmarks = self.bookmarks.borrow_mut();
+
+            bookmarks.clear();
+
+            if let Some(metadata) = self.metadata()
+                && let Some(s) = metadata.string("bookmarked-pages")
+            {
+                for part in s.split(',') {
+                    if let Ok(n) = part.parse::<i32>() {
+                        bookmarks.insert(n);
+                    }
+                }
+            }
+        }
+
+        fn store_bookmarks(&self) {
+            if let Some(metadata) = self.metadata() {
+                let s = self
+                    .bookmarks
+                    .borrow()
+                    .iter()
+                    .map(|n| n.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+
+                metadata.set_string("bookmarked-pages", &s);
+            }
+        }
+
+        pub(super) fn toggle_bookmark(&self, doc_page: i32) {
+            let now_bookmarked = {
+                let mut bookmarks = self.bookmarks.borrow_mut();
+
+                if bookmarks.remove(&doc_page) {
+                    false
+                } else {
+                    bookmarks.insert(doc_page);
+                    true
+                }
+            };
+
+            let store_index = self.index_of_store(doc_page);
+
+            if let Some(item) = self.list_store.item(store_index as u32)
+                && let Ok(item) = item.downcast::<PpsThumbnailItem>()
+            {
+                item.set_bookmarked(now_bookmarked);
+            }
+
+            self.store_bookmarks();
+        }
+
+        fn page_of_document(&self, store_index: i32) -> i32 {
+            let real_index = if self.blank_head_mode() {
+                store_index - 1
             } else {
-                doc_page
+                store_index
+            };
+
+            if real_index < 0 {
+                return -1;
+            }
+
+            self.order
+                .borrow()
+                .get(real_index as usize)
+                .copied()
+                .unwrap_or(-1)
+        }
+
+        fn index_of_store(&self, doc_page: i32) -> i32 {
+            let real_index = self
+                .order_index
+                .borrow()
+                .get(&doc_page)
+                .copied()
+                .unwrap_or(doc_page);
+
+            if self.blank_head_mode() {
+                real_index + 1
+            } else {
+                real_index
             }
         }
 
@@ -544,6 +858,10 @@ glib::wrapper! {
 impl PpsSidebarThumbnails {
     pub fn new() -> Self {
         glib::Object::builder().build()
+    }
+
+    pub fn toggle_bookmark(&self, doc_page: i32) {
+        self.imp().toggle_bookmark(doc_page);
     }
 }
 

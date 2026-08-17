@@ -94,6 +94,8 @@ mod imp {
         #[template_child]
         pub(super) sidebar_stack: TemplateChild<gtk::Stack>,
         #[template_child]
+        pub(super) sidebar_thumbs: TemplateChild<PpsSidebarThumbnails>,
+        #[template_child]
         pub(super) find_sidebar: TemplateChild<PpsFindSidebar>,
         #[template_child]
         pub(super) sidebar_layers: TemplateChild<PpsSidebarLayers>,
@@ -196,6 +198,7 @@ mod imp {
         pub(super) certificate_info: RefCell<Option<papers_document::CertificateInfo>>,
         pub(super) signature_page: Cell<u32>,
         pub(super) signature_bounding_box: RefCell<Option<papers_document::Rectangle>>,
+        pub(super) rotate_page_target: Cell<i32>,
 
         // Job
         pub(super) save_job: RefCell<Option<papers_view::JobSave>>,
@@ -909,6 +912,10 @@ impl PpsDocumentView {
 
     pub fn handle_annot_popup(&self, annot: &impl IsA<Annotation>) {
         self.imp().view_menu_annot_popup(Some(annot.as_ref()));
+    }
+
+    pub fn handle_page_popup(&self, page: i32) {
+        self.imp().rotate_page_target.set(page);
     }
 
     pub fn model(&self) -> DocumentModel {
