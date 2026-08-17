@@ -115,10 +115,7 @@ mod tests {
 
     #[test]
     fn parse_page_ranges_simple_list() {
-        assert_eq!(
-            parse_page_ranges("1,3,5", 10).unwrap(),
-            vec![0, 2, 4]
-        );
+        assert_eq!(parse_page_ranges("1,3,5", 10).unwrap(), vec![0, 2, 4]);
     }
 
     #[test]
