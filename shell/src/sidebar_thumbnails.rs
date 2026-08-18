@@ -795,6 +795,33 @@ mod imp {
             self.store_bookmarks();
         }
 
+        /// Clears all bookmarks. Call this after a page-identity-changing
+        /// mutation (delete, merge, reorder-commit) where old bookmark indices
+        /// can no longer be trusted to point at the same content.
+        pub(super) fn reset_bookmarks(&self) {
+            self.bookmarks.borrow_mut().clear();
+            self.store_bookmarks();
+            self.fill_list_store();
+        }
+
+        pub(super) fn current_order(&self) -> Vec<i32> {
+            self.order.borrow().clone()
+        }
+
+        /// Resets the persisted view order back to identity. Call this after
+        /// the current view order has been committed into the real PDF page
+        /// tree (via `pdf_mutation::reorder_pages`), so this sidebar's
+        /// bookkeeping matches the file it now shows.
+        pub(super) fn reset_order(&self) {
+            let n = self.order.borrow().len() as i32;
+            self.order.replace((0..n).collect());
+            self.rebuild_order_index();
+            self.store_order();
+
+            self.lru.borrow_mut().as_mut().unwrap().clear();
+            self.fill_list_store();
+        }
+
         fn page_of_document(&self, store_index: i32) -> i32 {
             let real_index = if self.blank_head_mode() {
                 store_index - 1
@@ -872,6 +899,18 @@ impl PpsSidebarThumbnails {
 
     pub fn set_bookmarked(&self, doc_page: i32, bookmarked: bool) {
         self.imp().set_bookmarked(doc_page, bookmarked);
+    }
+
+    pub fn reset_bookmarks(&self) {
+        self.imp().reset_bookmarks();
+    }
+
+    pub fn current_order(&self) -> Vec<i32> {
+        self.imp().current_order()
+    }
+
+    pub fn reset_order(&self) {
+        self.imp().reset_order();
     }
 }
 
