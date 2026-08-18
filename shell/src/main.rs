@@ -16,6 +16,7 @@ mod ink_transformation;
 #[cfg(feature = "with-keyring")]
 mod keyring;
 mod loader_view;
+mod page_edit_history;
 mod page_selector;
 mod password_view;
 mod pdf_mutation;

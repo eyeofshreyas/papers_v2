@@ -199,6 +199,7 @@ mod imp {
         pub(super) signature_page: Cell<u32>,
         pub(super) signature_bounding_box: RefCell<Option<papers_document::Rectangle>>,
         pub(super) rotate_page_target: Cell<i32>,
+        pub(super) page_edit_history: crate::page_edit_history::PageEditHistory,
 
         // Job
         pub(super) save_job: RefCell<Option<papers_view::JobSave>>,
