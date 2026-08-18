@@ -795,6 +795,15 @@ mod imp {
             self.store_bookmarks();
         }
 
+        /// Clears all bookmarks. Call this after a page-identity-changing
+        /// mutation (delete, merge, reorder-commit) where old bookmark indices
+        /// can no longer be trusted to point at the same content.
+        pub(super) fn reset_bookmarks(&self) {
+            self.bookmarks.borrow_mut().clear();
+            self.store_bookmarks();
+            self.fill_list_store();
+        }
+
         pub(super) fn current_order(&self) -> Vec<i32> {
             self.order.borrow().clone()
         }
@@ -890,6 +899,10 @@ impl PpsSidebarThumbnails {
 
     pub fn set_bookmarked(&self, doc_page: i32, bookmarked: bool) {
         self.imp().set_bookmarked(doc_page, bookmarked);
+    }
+
+    pub fn reset_bookmarks(&self) {
+        self.imp().reset_bookmarks();
     }
 
     pub fn current_order(&self) -> Vec<i32> {

@@ -84,7 +84,8 @@ pub fn crop_pages(path: &Path, indices: &[u32], margins: &CropMargins) -> Result
             .ok_or_else(|| format!("page {idx} out of range"))?;
 
         let media_box: qpdf::QPdfArray = page
-            .get("/MediaBox")
+            .get("/CropBox")
+            .or_else(|| page.get("/MediaBox"))
             .ok_or_else(|| format!("page {idx} has no MediaBox"))?
             .into();
 
@@ -168,7 +169,9 @@ pub fn extract_pages(src_path: &Path, dest_path: &Path, indices: &[u32]) -> Resu
         dest.add_page(page, false).map_err(|e| e.to_string())?;
     }
 
-    dest.writer().write(dest_path).map_err(|e| e.to_string())?;
+    let tmp_path = dest_path.with_extension("papers-extract-tmp");
+    dest.writer().write(&tmp_path).map_err(|e| e.to_string())?;
+    fs::rename(&tmp_path, dest_path).map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -406,6 +409,20 @@ mod tests {
         let target = tmp_dir.join("copy.pdf");
         fs::copy(&source, &target).unwrap();
 
+        let original: qpdf::QPdfArray = qpdf::QPdf::read(&target)
+            .unwrap()
+            .get_page(0)
+            .unwrap()
+            .get("/MediaBox")
+            .unwrap()
+            .into();
+        let orig: Vec<f64> = (0..4)
+            .map(|i| {
+                let s: qpdf::QPdfScalar = original.get(i).unwrap().into();
+                s.as_f64()
+            })
+            .collect();
+
         let margins = CropMargins {
             top: 10.0,
             bottom: 10.0,
@@ -417,6 +434,39 @@ mod tests {
         let reopened = qpdf::QPdf::read(&target).expect("file must still be valid PDF");
         let page = reopened.get_page(0).unwrap();
         assert!(page.has("/CropBox"), "page 0 should have a CropBox set");
+
+        let crop_box: qpdf::QPdfArray = page.get("/CropBox").unwrap().into();
+        let got: Vec<f64> = (0..4)
+            .map(|i| {
+                let s: qpdf::QPdfScalar = crop_box.get(i).unwrap().into();
+                s.as_f64()
+            })
+            .collect();
+
+        assert!(
+            (got[0] - (orig[0] + margins.left)).abs() < 0.01,
+            "x0: got {} expected {}",
+            got[0],
+            orig[0] + margins.left
+        );
+        assert!(
+            (got[1] - (orig[1] + margins.bottom)).abs() < 0.01,
+            "y0: got {} expected {}",
+            got[1],
+            orig[1] + margins.bottom
+        );
+        assert!(
+            (got[2] - (orig[2] - margins.right)).abs() < 0.01,
+            "x1: got {} expected {}",
+            got[2],
+            orig[2] - margins.right
+        );
+        assert!(
+            (got[3] - (orig[3] - margins.top)).abs() < 0.01,
+            "y1: got {} expected {}",
+            got[3],
+            orig[3] - margins.top
+        );
 
         fs::remove_dir_all(&tmp_dir).ok();
     }

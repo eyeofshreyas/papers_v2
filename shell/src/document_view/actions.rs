@@ -1309,6 +1309,7 @@ impl imp::PpsDocumentView {
 
         match crate::pdf_mutation::delete_pages(&path, &indices) {
             Ok(()) => {
+                self.sidebar_thumbs.reset_bookmarks();
                 let message = formatx!(gettext("Deleted {} page(s)"), indices.len())
                     .expect("Wrong format in translated string");
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
@@ -1476,6 +1477,7 @@ impl imp::PpsDocumentView {
         match crate::pdf_mutation::reorder_pages(&path, &order) {
             Ok(()) => {
                 self.sidebar_thumbs.reset_order();
+                self.sidebar_thumbs.reset_bookmarks();
                 self.toast_overlay
                     .add_toast(adw::Toast::new(&gettext("Page order saved")));
             }
@@ -1642,9 +1644,9 @@ impl imp::PpsDocumentView {
     }
 
     fn ask_merge_position(&self, insert_path: std::path::PathBuf, n_pages: i32) {
-        let position_row = adw::SpinRow::with_range(0.0, n_pages as f64, 1.0);
-        position_row.set_title(&gettext("Insert Before Page (end if left at max)"));
-        position_row.set_value(n_pages as f64);
+        let position_row = adw::SpinRow::with_range(1.0, (n_pages + 1) as f64, 1.0);
+        position_row.set_title(&gettext("Insert Before Page"));
+        position_row.set_value((n_pages + 1) as f64);
 
         let group = adw::PreferencesGroup::new();
         group.add(&position_row);
@@ -1676,7 +1678,7 @@ impl imp::PpsDocumentView {
                 insert_path,
                 move |_, response| {
                     if response == "merge" {
-                        obj.apply_merge_pdf(&insert_path, position_row.value() as u32);
+                        obj.apply_merge_pdf(&insert_path, position_row.value() as u32 - 1);
                     }
                 }
             ),
@@ -1692,6 +1694,7 @@ impl imp::PpsDocumentView {
 
         match crate::pdf_mutation::merge_pages(&path, insert_path, at_index) {
             Ok(()) => {
+                self.sidebar_thumbs.reset_bookmarks();
                 self.toast_overlay
                     .add_toast(adw::Toast::new(&gettext("Merged PDF")));
             }
