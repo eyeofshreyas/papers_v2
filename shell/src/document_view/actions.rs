@@ -98,6 +98,9 @@ impl imp::PpsDocumentView {
         // Set enabled state for caret-navigation
         self.set_action_enabled("caret-navigation", self.view.supports_caret_navigation());
 
+        self.set_action_enabled("undo-page-edit", self.page_edit_history.can_undo());
+        self.set_action_enabled("redo-page-edit", self.page_edit_history.can_redo());
+
         self.doc_restrictions_changed();
     }
 
@@ -227,6 +230,20 @@ impl imp::PpsDocumentView {
                     #[weak(rename_to = obj)]
                     self,
                     move |_, _, _| obj.cmd_merge_pdf()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("undo-page-edit")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_undo_page_edit()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("redo-page-edit")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_redo_page_edit()
                 ))
                 .build(),
             gio::ActionEntryBuilder::new("show-properties")
@@ -1220,6 +1237,58 @@ impl imp::PpsDocumentView {
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
         }
+    }
+
+    /// Shows a toast with an inline "Undo" button wired to
+    /// `doc.undo-page-edit`. Used by every "Update This Document"
+    /// success path (delete/crop/reorder/merge) — mirrors the existing
+    /// `remove-annot` toast's undo-button pattern.
+    fn toast_with_undo(&self, message: &str) {
+        let toast = adw::Toast::builder()
+            .title(message)
+            .button_label(gettext("_Undo"))
+            .timeout(7)
+            .build();
+
+        toast.connect_button_clicked(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            move |_| {
+                obj.cmd_undo_page_edit();
+            }
+        ));
+
+        self.toast_overlay.add_toast(toast);
+    }
+
+    fn cmd_undo_page_edit(&self) {
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        if let Err(e) = self.page_edit_history.undo(&path) {
+            let message =
+                formatx!(gettext("Undo failed: {}"), e).expect("Wrong format in translated string");
+            self.toast_overlay.add_toast(adw::Toast::new(&message));
+        }
+
+        self.set_action_enabled("undo-page-edit", self.page_edit_history.can_undo());
+        self.set_action_enabled("redo-page-edit", self.page_edit_history.can_redo());
+    }
+
+    fn cmd_redo_page_edit(&self) {
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        if let Err(e) = self.page_edit_history.redo(&path) {
+            let message =
+                formatx!(gettext("Redo failed: {}"), e).expect("Wrong format in translated string");
+            self.toast_overlay.add_toast(adw::Toast::new(&message));
+        }
+
+        self.set_action_enabled("undo-page-edit", self.page_edit_history.can_undo());
+        self.set_action_enabled("redo-page-edit", self.page_edit_history.can_redo());
     }
 
     fn cmd_delete_pages(&self, preselect: Option<i32>) {
