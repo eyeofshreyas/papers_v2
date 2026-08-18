@@ -1292,18 +1292,6 @@ impl imp::PpsDocumentView {
     }
 
     fn cmd_delete_pages(&self, preselect: Option<i32>) {
-        if self.check_document_modified() {
-            let dialog = adw::AlertDialog::builder()
-                .heading(gettext("Unsaved Changes"))
-                .body(gettext("Save your changes before deleting pages."))
-                .default_response("ok")
-                .build();
-
-            dialog.add_response("ok", &gettext("_OK"));
-            dialog.present(Some(self.obj().as_ref()));
-            return;
-        }
-
         let Some(document) = self.document() else {
             return;
         };
@@ -1322,9 +1310,7 @@ impl imp::PpsDocumentView {
 
         let dialog = adw::AlertDialog::builder()
             .heading(gettext("Delete Pages"))
-            .body(gettext(
-                "Removes the given pages from the document and saves it. This cannot be undone.",
-            ))
+            .body(gettext("Removes the given pages from the document."))
             .extra_child(&group)
             .default_response("delete")
             .close_response("cancel")
@@ -1332,16 +1318,20 @@ impl imp::PpsDocumentView {
 
         dialog.add_responses(&[
             ("cancel", &gettext("_Cancel")),
-            ("delete", &gettext("_Delete")),
+            ("delete-copy", &gettext("Save As New _Copy…")),
+            ("delete", &gettext("_Update Document")),
         ]);
         dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
         dialog.set_response_enabled("delete", preselect.is_some());
+        dialog.set_response_enabled("delete-copy", preselect.is_some());
 
         entry.connect_changed(glib::clone!(
             #[weak]
             dialog,
             move |entry| {
-                dialog.set_response_enabled("delete", !entry.text().is_empty());
+                let has_text = !entry.text().is_empty();
+                dialog.set_response_enabled("delete", has_text);
+                dialog.set_response_enabled("delete-copy", has_text);
             }
         ));
 
@@ -1352,10 +1342,12 @@ impl imp::PpsDocumentView {
                 self,
                 #[strong]
                 entry,
-                move |_, response| {
-                    if response == "delete" {
-                        obj.apply_delete_pages(&entry.text(), n_pages);
+                move |_, response| match response {
+                    "delete" => obj.apply_delete_pages(&entry.text(), n_pages),
+                    "delete-copy" => {
+                        obj.pick_delete_pages_copy_destination(&entry.text(), n_pages)
                     }
+                    _ => (),
                 }
             ),
         );
@@ -1364,6 +1356,18 @@ impl imp::PpsDocumentView {
     }
 
     fn apply_delete_pages(&self, input: &str, n_pages: i32) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before deleting pages."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
         let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
             return;
         };
@@ -1376,12 +1380,19 @@ impl imp::PpsDocumentView {
             }
         };
 
+        if let Err(e) = self.page_edit_history.checkpoint(&path) {
+            let message = formatx!(gettext("Could not save an undo point: {}"), e)
+                .expect("Wrong format in translated string");
+            self.toast_overlay.add_toast(adw::Toast::new(&message));
+            return;
+        }
+
         match crate::pdf_mutation::delete_pages(&path, &indices) {
             Ok(()) => {
                 self.sidebar_thumbs.reset_bookmarks();
                 let message = formatx!(gettext("Deleted {} page(s)"), indices.len())
                     .expect("Wrong format in translated string");
-                self.toast_overlay.add_toast(adw::Toast::new(&message));
+                self.toast_with_undo(&message);
             }
             Err(e) => {
                 let message = formatx!(gettext("Delete failed: {}"), e)
@@ -1389,6 +1400,71 @@ impl imp::PpsDocumentView {
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
         }
+    }
+
+    fn pick_delete_pages_copy_destination(&self, input: &str, n_pages: i32) {
+        let indices = match crate::pdf_mutation::parse_page_ranges(input, n_pages as u32) {
+            Ok(indices) => indices,
+            Err(e) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&e));
+                return;
+            }
+        };
+
+        let Some(src_path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Save As New Copy…"))
+            .modal(true)
+            .initial_name(self.edit_name.borrow().clone())
+            .build();
+
+        self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            #[strong]
+            src_path,
+            #[strong]
+            indices,
+            async move {
+                let Ok(file) = dialog.save_future(Some(&obj.parent_window())).await else {
+                    return;
+                };
+
+                obj.file_dialog_save_folder(Some(&file), UserDirectory::Documents);
+
+                let Some(dest_path) = file.path() else {
+                    return;
+                };
+
+                if let Err(e) = std::fs::copy(&src_path, &dest_path) {
+                    let message = formatx!(gettext("Could not create the copy: {}"), e)
+                        .expect("Wrong format in translated string");
+                    obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    return;
+                }
+
+                match crate::pdf_mutation::delete_pages(&dest_path, &indices) {
+                    Ok(()) => {
+                        let message = formatx!(
+                            gettext("Deleted {} page(s) and saved as a new copy"),
+                            indices.len()
+                        )
+                        .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                    Err(e) => {
+                        let message = formatx!(gettext("Delete failed: {}"), e)
+                            .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                }
+            }
+        ));
     }
 
     fn cmd_crop_pages(&self, preselect: Option<i32>) {
