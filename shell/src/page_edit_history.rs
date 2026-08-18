@@ -87,17 +87,22 @@ impl PageEditHistory {
     pub fn undo(&self, path: &Path) -> Result<(), String> {
         let snapshot_path = self
             .undo_stack
-            .borrow_mut()
-            .pop()
+            .borrow()
+            .last()
+            .cloned()
             .ok_or_else(|| "nothing to undo".to_string())?;
 
         let redo_snapshot_path = self.next_snapshot_path()?;
         fs::copy(path, &redo_snapshot_path).map_err(|e| e.to_string())?;
-        self.redo_stack.borrow_mut().push(redo_snapshot_path);
 
         let tmp_path = path.with_extension("papers-undo-tmp");
         fs::copy(&snapshot_path, &tmp_path).map_err(|e| e.to_string())?;
         fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
+
+        // Only mutate the stacks once every fallible step above has
+        // succeeded, so a failure here never orphans a stack entry.
+        self.undo_stack.borrow_mut().pop();
+        self.redo_stack.borrow_mut().push(redo_snapshot_path);
 
         let _ = fs::remove_file(snapshot_path);
 
@@ -108,17 +113,20 @@ impl PageEditHistory {
     pub fn redo(&self, path: &Path) -> Result<(), String> {
         let snapshot_path = self
             .redo_stack
-            .borrow_mut()
-            .pop()
+            .borrow()
+            .last()
+            .cloned()
             .ok_or_else(|| "nothing to redo".to_string())?;
 
         let undo_snapshot_path = self.next_snapshot_path()?;
         fs::copy(path, &undo_snapshot_path).map_err(|e| e.to_string())?;
-        self.undo_stack.borrow_mut().push(undo_snapshot_path);
 
         let tmp_path = path.with_extension("papers-redo-tmp");
         fs::copy(&snapshot_path, &tmp_path).map_err(|e| e.to_string())?;
         fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
+
+        self.redo_stack.borrow_mut().pop();
+        self.undo_stack.borrow_mut().push(undo_snapshot_path);
 
         let _ = fs::remove_file(snapshot_path);
 
