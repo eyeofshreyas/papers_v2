@@ -1693,6 +1693,39 @@ impl imp::PpsDocumentView {
     }
 
     fn cmd_apply_page_order(&self) {
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Save Page Order"))
+            .body(gettext(
+                "Writes the sidebar's current page order into the document.",
+            ))
+            .default_response("save-order")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("save-order-copy", &gettext("Save As New _Copy…")),
+            ("save-order", &gettext("_Update Document")),
+        ]);
+        dialog.set_response_appearance("save-order", adw::ResponseAppearance::Suggested);
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |_, response| match response {
+                    "save-order" => obj.confirm_apply_page_order(),
+                    "save-order-copy" => obj.pick_page_order_copy_destination(),
+                    _ => (),
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn confirm_apply_page_order(&self) {
         if self.check_document_modified() {
             let dialog = adw::AlertDialog::builder()
                 .heading(gettext("Unsaved Changes"))
@@ -1716,12 +1749,18 @@ impl imp::PpsDocumentView {
             .map(|p| p as u32)
             .collect();
 
+        if let Err(e) = self.page_edit_history.checkpoint(&path) {
+            let message = formatx!(gettext("Could not save an undo point: {}"), e)
+                .expect("Wrong format in translated string");
+            self.toast_overlay.add_toast(adw::Toast::new(&message));
+            return;
+        }
+
         match crate::pdf_mutation::reorder_pages(&path, &order) {
             Ok(()) => {
                 self.sidebar_thumbs.reset_order();
                 self.sidebar_thumbs.reset_bookmarks();
-                self.toast_overlay
-                    .add_toast(adw::Toast::new(&gettext("Page order saved")));
+                self.toast_with_undo(&gettext("Page order saved"));
             }
             Err(e) => {
                 let message = formatx!(gettext("Save page order failed: {}"), e)
@@ -1729,6 +1768,66 @@ impl imp::PpsDocumentView {
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
         }
+    }
+
+    fn pick_page_order_copy_destination(&self) {
+        let Some(src_path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let order: Vec<u32> = self
+            .sidebar_thumbs
+            .current_order()
+            .into_iter()
+            .map(|p| p as u32)
+            .collect();
+
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Save As New Copy…"))
+            .modal(true)
+            .initial_name(self.edit_name.borrow().clone())
+            .build();
+
+        self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            #[strong]
+            src_path,
+            #[strong]
+            order,
+            async move {
+                let Ok(file) = dialog.save_future(Some(&obj.parent_window())).await else {
+                    return;
+                };
+
+                obj.file_dialog_save_folder(Some(&file), UserDirectory::Documents);
+
+                let Some(dest_path) = file.path() else {
+                    return;
+                };
+
+                if let Err(e) = std::fs::copy(&src_path, &dest_path) {
+                    let message = formatx!(gettext("Could not create the copy: {}"), e)
+                        .expect("Wrong format in translated string");
+                    obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    return;
+                }
+
+                match crate::pdf_mutation::reorder_pages(&dest_path, &order) {
+                    Ok(()) => {
+                        obj.toast_overlay
+                            .add_toast(adw::Toast::new(&gettext("Saved page order as a new copy")));
+                    }
+                    Err(e) => {
+                        let message = formatx!(gettext("Save page order failed: {}"), e)
+                            .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                }
+            }
+        ));
     }
 
     fn cmd_extract_pages(&self) {
