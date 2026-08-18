@@ -1468,18 +1468,6 @@ impl imp::PpsDocumentView {
     }
 
     fn cmd_crop_pages(&self, preselect: Option<i32>) {
-        if self.check_document_modified() {
-            let dialog = adw::AlertDialog::builder()
-                .heading(gettext("Unsaved Changes"))
-                .body(gettext("Save your changes before cropping pages."))
-                .default_response("ok")
-                .build();
-
-            dialog.add_response("ok", &gettext("_OK"));
-            dialog.present(Some(self.obj().as_ref()));
-            return;
-        }
-
         let Some(document) = self.document() else {
             return;
         };
@@ -1512,22 +1500,29 @@ impl imp::PpsDocumentView {
         let dialog = adw::AlertDialog::builder()
             .heading(gettext("Crop Pages"))
             .body(gettext(
-                "Shrinks the visible area of the given pages by the specified margins, then saves the document.",
+                "Shrinks the visible area of the given pages by the specified margins.",
             ))
             .extra_child(&group)
             .default_response("crop")
             .close_response("cancel")
             .build();
 
-        dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("crop", &gettext("_Crop"))]);
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("crop-copy", &gettext("Save As New _Copy…")),
+            ("crop", &gettext("_Update Document")),
+        ]);
         dialog.set_response_appearance("crop", adw::ResponseAppearance::Suggested);
         dialog.set_response_enabled("crop", preselect.is_some());
+        dialog.set_response_enabled("crop-copy", preselect.is_some());
 
         entry.connect_changed(glib::clone!(
             #[weak]
             dialog,
             move |entry| {
-                dialog.set_response_enabled("crop", !entry.text().is_empty());
+                let has_text = !entry.text().is_empty();
+                dialog.set_response_enabled("crop", has_text);
+                dialog.set_response_enabled("crop-copy", has_text);
             }
         ));
 
@@ -1547,14 +1542,18 @@ impl imp::PpsDocumentView {
                 #[strong]
                 right_row,
                 move |_, response| {
-                    if response == "crop" {
-                        let margins = crate::pdf_mutation::CropMargins {
-                            top: top_row.value(),
-                            bottom: bottom_row.value(),
-                            left: left_row.value(),
-                            right: right_row.value(),
-                        };
-                        obj.apply_crop_pages(&entry.text(), n_pages, &margins);
+                    let margins = crate::pdf_mutation::CropMargins {
+                        top: top_row.value(),
+                        bottom: bottom_row.value(),
+                        left: left_row.value(),
+                        right: right_row.value(),
+                    };
+                    match response {
+                        "crop" => obj.apply_crop_pages(&entry.text(), n_pages, &margins),
+                        "crop-copy" => {
+                            obj.pick_crop_pages_copy_destination(&entry.text(), n_pages, &margins)
+                        }
+                        _ => (),
                     }
                 }
             ),
@@ -1569,6 +1568,18 @@ impl imp::PpsDocumentView {
         n_pages: i32,
         margins: &crate::pdf_mutation::CropMargins,
     ) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before cropping pages."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
         let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
             return;
         };
@@ -1581,11 +1592,18 @@ impl imp::PpsDocumentView {
             }
         };
 
+        if let Err(e) = self.page_edit_history.checkpoint(&path) {
+            let message = formatx!(gettext("Could not save an undo point: {}"), e)
+                .expect("Wrong format in translated string");
+            self.toast_overlay.add_toast(adw::Toast::new(&message));
+            return;
+        }
+
         match crate::pdf_mutation::crop_pages(&path, &indices, margins) {
             Ok(()) => {
                 let message = formatx!(gettext("Cropped {} page(s)"), indices.len())
                     .expect("Wrong format in translated string");
-                self.toast_overlay.add_toast(adw::Toast::new(&message));
+                self.toast_with_undo(&message);
             }
             Err(e) => {
                 let message = formatx!(gettext("Crop failed: {}"), e)
@@ -1593,6 +1611,85 @@ impl imp::PpsDocumentView {
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
         }
+    }
+
+    fn pick_crop_pages_copy_destination(
+        &self,
+        input: &str,
+        n_pages: i32,
+        margins: &crate::pdf_mutation::CropMargins,
+    ) {
+        let indices = match crate::pdf_mutation::parse_page_ranges(input, n_pages as u32) {
+            Ok(indices) => indices,
+            Err(e) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&e));
+                return;
+            }
+        };
+
+        let Some(src_path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        // CropMargins has no Clone impl (see Global Constraints); build
+        // an owned copy to move into the async block below.
+        let margins = crate::pdf_mutation::CropMargins {
+            top: margins.top,
+            bottom: margins.bottom,
+            left: margins.left,
+            right: margins.right,
+        };
+
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Save As New Copy…"))
+            .modal(true)
+            .initial_name(self.edit_name.borrow().clone())
+            .build();
+
+        self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            #[strong]
+            src_path,
+            #[strong]
+            indices,
+            async move {
+                let Ok(file) = dialog.save_future(Some(&obj.parent_window())).await else {
+                    return;
+                };
+
+                obj.file_dialog_save_folder(Some(&file), UserDirectory::Documents);
+
+                let Some(dest_path) = file.path() else {
+                    return;
+                };
+
+                if let Err(e) = std::fs::copy(&src_path, &dest_path) {
+                    let message = formatx!(gettext("Could not create the copy: {}"), e)
+                        .expect("Wrong format in translated string");
+                    obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    return;
+                }
+
+                match crate::pdf_mutation::crop_pages(&dest_path, &indices, &margins) {
+                    Ok(()) => {
+                        let message = formatx!(
+                            gettext("Cropped {} page(s) and saved as a new copy"),
+                            indices.len()
+                        )
+                        .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                    Err(e) => {
+                        let message = formatx!(gettext("Crop failed: {}"), e)
+                            .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                }
+            }
+        ));
     }
 
     fn cmd_apply_page_order(&self) {
