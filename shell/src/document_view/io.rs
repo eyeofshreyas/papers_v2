@@ -66,6 +66,8 @@ impl imp::PpsDocumentView {
             return;
         }
 
+        self.page_edit_history.clear();
+
         self.metadata.replace(metadata.cloned());
 
         let file = document.uri().map(|uri| gio::File::for_uri(&uri));
