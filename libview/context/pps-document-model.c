@@ -34,6 +34,8 @@ struct _PpsDocumentModel {
 
 	gint page;
 	gint rotation;
+	GHashTable *page_rotations; /* GINT_TO_POINTER(page) -> GINT_TO_POINTER(rotation), absent = 0 */
+	guint page_rotation_generation; /* bumped whenever page_rotations changes, for cache invalidation */
 	gdouble scale;
 	PpsSizingMode sizing_mode;
 	PpsPageLayout page_layout;
@@ -69,6 +71,7 @@ enum {
 
 enum {
 	PAGE_CHANGED,
+	PAGE_ROTATION_CHANGED,
 	N_SIGNALS
 };
 
@@ -85,6 +88,7 @@ pps_document_model_finalize (GObject *object)
 	PpsDocumentModel *model = PPS_DOCUMENT_MODEL (object);
 
 	g_clear_object (&model->document);
+	g_clear_pointer (&model->page_rotations, g_hash_table_unref);
 
 	G_OBJECT_CLASS (pps_document_model_parent_class)->finalize (object);
 }
@@ -363,6 +367,15 @@ pps_document_model_class_init (PpsDocumentModelClass *klass)
 	                  pps_view_marshal_VOID__INT_INT,
 	                  G_TYPE_NONE, 2,
 	                  G_TYPE_INT, G_TYPE_INT);
+	signals[PAGE_ROTATION_CHANGED] =
+	    g_signal_new ("page-rotation-changed",
+	                  PPS_TYPE_DOCUMENT_MODEL,
+	                  G_SIGNAL_RUN_LAST,
+	                  0,
+	                  NULL, NULL,
+	                  pps_view_marshal_VOID__INT_INT,
+	                  G_TYPE_NONE, 2,
+	                  G_TYPE_INT, G_TYPE_INT);
 }
 
 static void
@@ -375,6 +388,7 @@ pps_document_model_init (PpsDocumentModel *model)
 	model->inverted_colors = FALSE;
 	model->min_scale = DEFAULT_MIN_SCALE;
 	model->max_scale = DEFAULT_MAX_SCALE;
+	model->page_rotations = g_hash_table_new (NULL, NULL);
 }
 
 PpsDocumentModel *
@@ -408,6 +422,9 @@ pps_document_model_set_document (PpsDocumentModel *model,
 		return;
 
 	g_object_freeze_notify (G_OBJECT (model));
+
+	g_hash_table_remove_all (model->page_rotations);
+	model->page_rotation_generation++;
 
 	model->n_pages = pps_document_get_n_pages (document);
 	pps_document_model_set_page (model, CLAMP (model->page, 0,
@@ -631,6 +648,61 @@ pps_document_model_get_rotation (PpsDocumentModel *model)
 	g_return_val_if_fail (PPS_IS_DOCUMENT_MODEL (model), 0);
 
 	return model->rotation;
+}
+
+void
+pps_document_model_set_page_rotation (PpsDocumentModel *model,
+                                      gint page,
+                                      gint rotation)
+{
+	g_return_if_fail (PPS_IS_DOCUMENT_MODEL (model));
+
+	if (rotation >= 360)
+		rotation -= 360;
+	else if (rotation < 0)
+		rotation += 360;
+
+	if (rotation == pps_document_model_get_page_rotation (model, page))
+		return;
+
+	if (rotation == 0)
+		g_hash_table_remove (model->page_rotations, GINT_TO_POINTER (page));
+	else
+		g_hash_table_insert (model->page_rotations, GINT_TO_POINTER (page), GINT_TO_POINTER (rotation));
+
+	model->page_rotation_generation++;
+
+	g_signal_emit (model, signals[PAGE_ROTATION_CHANGED], 0, page, rotation);
+}
+
+guint
+pps_document_model_get_page_rotation_generation (PpsDocumentModel *model)
+{
+	g_return_val_if_fail (PPS_IS_DOCUMENT_MODEL (model), 0);
+
+	return model->page_rotation_generation;
+}
+
+gint
+pps_document_model_get_page_rotation (PpsDocumentModel *model,
+                                      gint page)
+{
+	g_return_val_if_fail (PPS_IS_DOCUMENT_MODEL (model), 0);
+
+	return GPOINTER_TO_INT (g_hash_table_lookup (model->page_rotations, GINT_TO_POINTER (page)));
+}
+
+gint
+pps_document_model_get_effective_page_rotation (PpsDocumentModel *model,
+                                                gint page)
+{
+	gint rotation;
+
+	g_return_val_if_fail (PPS_IS_DOCUMENT_MODEL (model), 0);
+
+	rotation = pps_document_model_get_rotation (model) + pps_document_model_get_page_rotation (model, page);
+
+	return rotation % 360;
 }
 
 void

@@ -266,6 +266,7 @@ template $PpsDocumentView: Adw.BreakpointBin {
               Button {
                 styles [
                   "circular",
+                  "flat",
                 ]
 
                 icon-name: "object-rotate-right-symbolic";
@@ -280,6 +281,7 @@ template $PpsDocumentView: Adw.BreakpointBin {
                 child: Button {
                   styles [
                     "circular",
+                    "flat",
                   ]
 
                   icon-name: "zoom-fit-best-symbolic";
@@ -294,6 +296,7 @@ template $PpsDocumentView: Adw.BreakpointBin {
               Button {
                 styles [
                   "circular",
+                  "flat",
                 ]
 
                 icon-name: "zoom-in-symbolic";
@@ -319,6 +322,7 @@ template $PpsDocumentView: Adw.BreakpointBin {
               Button {
                 styles [
                   "circular",
+                  "flat",
                 ]
 
                 icon-name: "zoom-out-symbolic";
@@ -874,6 +878,41 @@ menu document_menu {
     item {
       label: _("Sign D_igitally…");
       action: "doc.digital-signing";
+    }
+
+    item {
+      label: _("Add _Watermark…");
+      action: "doc.add-watermark";
+    }
+
+    item {
+      label: _("_Compress Document");
+      action: "doc.compress-document";
+    }
+
+    item {
+      label: _("_Delete Pages…");
+      action: "doc.delete-pages";
+    }
+
+    item {
+      label: _("_Crop Pages…");
+      action: "doc.crop-pages";
+    }
+
+    item {
+      label: _("Save Page _Order");
+      action: "doc.apply-page-order";
+    }
+
+    item {
+      label: _("E_xtract Pages…");
+      action: "doc.extract-pages";
+    }
+
+    item {
+      label: _("_Merge PDF…");
+      action: "doc.merge-pdf";
     }
   }
 

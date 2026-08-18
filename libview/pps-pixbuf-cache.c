@@ -417,8 +417,7 @@ static gint
 pps_pixbuf_cache_get_preload_size (PpsPixbufCache *pixbuf_cache,
                                    gint start_page,
                                    gint end_page,
-                                   gdouble scale,
-                                   gint rotation)
+                                   gdouble scale)
 {
 	gsize range_size = 0;
 	gint new_preload_cache_size = 0;
@@ -427,7 +426,8 @@ pps_pixbuf_cache_get_preload_size (PpsPixbufCache *pixbuf_cache,
 
 	/* Get the size of the current range */
 	for (i = start_page; i <= end_page; i++) {
-		range_size += pps_pixbuf_cache_get_page_size (pixbuf_cache, i, scale, rotation);
+		range_size += pps_pixbuf_cache_get_page_size (pixbuf_cache, i, scale,
+		                                              pps_document_model_get_effective_page_rotation (pixbuf_cache->model, i));
 	}
 
 	if (range_size >= pixbuf_cache->max_size)
@@ -440,8 +440,8 @@ pps_pixbuf_cache_get_preload_size (PpsPixbufCache *pixbuf_cache,
 		gboolean updated = FALSE;
 
 		if (end_page + i < n_pages) {
-			page_size = pps_pixbuf_cache_get_page_size (pixbuf_cache, end_page + i,
-			                                            scale, rotation);
+			page_size = pps_pixbuf_cache_get_page_size (pixbuf_cache, end_page + i, scale,
+			                                            pps_document_model_get_effective_page_rotation (pixbuf_cache->model, end_page + i));
 			if (page_size + range_size <= pixbuf_cache->max_size) {
 				range_size += page_size;
 				new_preload_cache_size++;
@@ -452,8 +452,8 @@ pps_pixbuf_cache_get_preload_size (PpsPixbufCache *pixbuf_cache,
 		}
 
 		if (start_page - i > 0) {
-			page_size = pps_pixbuf_cache_get_page_size (pixbuf_cache, start_page - i,
-			                                            scale, rotation);
+			page_size = pps_pixbuf_cache_get_page_size (pixbuf_cache, start_page - i, scale,
+			                                            pps_document_model_get_effective_page_rotation (pixbuf_cache->model, start_page - i));
 			if (page_size + range_size <= pixbuf_cache->max_size) {
 				range_size += page_size;
 				if (!updated)
@@ -472,7 +472,6 @@ static void
 pps_pixbuf_cache_update_range (PpsPixbufCache *pixbuf_cache,
                                gint start_page,
                                gint end_page,
-                               guint rotation,
                                gdouble scale)
 {
 	CacheJobInfo *new_job_list;
@@ -485,8 +484,7 @@ pps_pixbuf_cache_update_range (PpsPixbufCache *pixbuf_cache,
 	new_preload_cache_size = pps_pixbuf_cache_get_preload_size (pixbuf_cache,
 	                                                            start_page,
 	                                                            end_page,
-	                                                            scale,
-	                                                            rotation);
+	                                                            scale);
 	if (pixbuf_cache->start_page == start_page &&
 	    pixbuf_cache->end_page == end_page &&
 	    pixbuf_cache->preload_cache_size == new_preload_cache_size)
@@ -731,7 +729,6 @@ add_job_if_needed (PpsPixbufCache *pixbuf_cache,
 
 static void
 add_prev_jobs_if_needed (PpsPixbufCache *pixbuf_cache,
-                         gint rotation,
                          gfloat scale,
                          PpsRenderAnnotsFlags annot_flags)
 {
@@ -744,14 +741,13 @@ add_prev_jobs_if_needed (PpsPixbufCache *pixbuf_cache,
 		page = pixbuf_cache->start_page - pixbuf_cache->preload_cache_size + i;
 
 		add_job_if_needed (pixbuf_cache, job_info,
-		                   page, rotation, scale,
+		                   page, pps_document_model_get_effective_page_rotation (pixbuf_cache->model, page), scale,
 		                   PPS_JOB_PRIORITY_LOW, annot_flags);
 	}
 }
 
 static void
 add_next_jobs_if_needed (PpsPixbufCache *pixbuf_cache,
-                         gint rotation,
                          gfloat scale,
                          PpsRenderAnnotsFlags annot_flags)
 {
@@ -764,14 +760,13 @@ add_next_jobs_if_needed (PpsPixbufCache *pixbuf_cache,
 		page = pixbuf_cache->end_page + 1 + i;
 
 		add_job_if_needed (pixbuf_cache, job_info,
-		                   page, rotation, scale,
+		                   page, pps_document_model_get_effective_page_rotation (pixbuf_cache->model, page), scale,
 		                   PPS_JOB_PRIORITY_LOW, annot_flags);
 	}
 }
 
 static void
 pps_pixbuf_cache_add_jobs_if_needed (PpsPixbufCache *pixbuf_cache,
-                                     gint rotation,
                                      gfloat scale,
                                      PpsRenderAnnotsFlags annot_flags)
 {
@@ -784,16 +779,16 @@ pps_pixbuf_cache_add_jobs_if_needed (PpsPixbufCache *pixbuf_cache,
 		page = pixbuf_cache->start_page + i;
 
 		add_job_if_needed (pixbuf_cache, job_info,
-		                   page, rotation, scale,
+		                   page, pps_document_model_get_effective_page_rotation (pixbuf_cache->model, page), scale,
 		                   PPS_JOB_PRIORITY_URGENT, annot_flags);
 	}
 
 	if (pixbuf_cache->scroll_direction == GDK_SCROLL_UP) {
-		add_prev_jobs_if_needed (pixbuf_cache, rotation, scale, annot_flags);
-		add_next_jobs_if_needed (pixbuf_cache, rotation, scale, annot_flags);
+		add_prev_jobs_if_needed (pixbuf_cache, scale, annot_flags);
+		add_next_jobs_if_needed (pixbuf_cache, scale, annot_flags);
 	} else {
-		add_next_jobs_if_needed (pixbuf_cache, rotation, scale, annot_flags);
-		add_prev_jobs_if_needed (pixbuf_cache, rotation, scale, annot_flags);
+		add_next_jobs_if_needed (pixbuf_cache, scale, annot_flags);
+		add_prev_jobs_if_needed (pixbuf_cache, scale, annot_flags);
 	}
 }
 
@@ -824,7 +819,6 @@ pps_pixbuf_cache_set_page_range (PpsPixbufCache *pixbuf_cache,
                                  GList *selection_list)
 {
 	gdouble scale = pps_document_model_get_scale (pixbuf_cache->model);
-	gint rotation = pps_document_model_get_rotation (pixbuf_cache->model);
 	PpsRenderAnnotsFlags annot_flags = pps_pixbuf_cache_get_annot_flags (pixbuf_cache);
 
 	g_return_if_fail (PPS_IS_PIXBUF_CACHE (pixbuf_cache));
@@ -837,7 +831,7 @@ pps_pixbuf_cache_set_page_range (PpsPixbufCache *pixbuf_cache,
 
 	/* First, resize the page_range as needed.  We cull old pages
 	 * mercilessly. */
-	pps_pixbuf_cache_update_range (pixbuf_cache, start_page, end_page, rotation, scale);
+	pps_pixbuf_cache_update_range (pixbuf_cache, start_page, end_page, scale);
 
 	/* Then, we update the current jobs to see if any of them are the wrong
 	 * size, we remove them if we need to. */
@@ -848,7 +842,7 @@ pps_pixbuf_cache_set_page_range (PpsPixbufCache *pixbuf_cache,
 
 	/* Finally, we add the new jobs for all the sizes that don't have a
 	 * pixbuf */
-	pps_pixbuf_cache_add_jobs_if_needed (pixbuf_cache, rotation, scale, annot_flags);
+	pps_pixbuf_cache_add_jobs_if_needed (pixbuf_cache, scale, annot_flags);
 }
 
 GdkTexture *

@@ -121,7 +121,7 @@ pps_view_page_measure (GtkWidget *widget,
 	if (priv->model != NULL && pps_document_model_get_document (priv->model) != NULL && priv->index >= 0) {
 		document = pps_document_model_get_document (priv->model);
 		scale = pps_document_model_get_scale (priv->model);
-		rotation = pps_document_model_get_rotation (priv->model);
+		rotation = pps_document_model_get_effective_page_rotation (priv->model, priv->index);
 
 		pps_document_get_page_size (document, priv->index, &width_raw, &height_raw);
 
@@ -149,7 +149,7 @@ doc_rect_to_view_rect (PpsViewPage *page,
 	gdouble page_height = gtk_widget_get_height (GTK_WIDGET (page));
 	gdouble x, y, width, height;
 
-	switch (pps_document_model_get_rotation (priv->model)) {
+	switch (pps_document_model_get_effective_page_rotation (priv->model, priv->index)) {
 	case 0:
 		x = doc_rect->x1 * scale;
 		y = doc_rect->y1 * scale;
@@ -194,7 +194,7 @@ view_point_to_doc_point (PpsViewPage *page, double x, double y)
 	gdouble page_height = gtk_widget_get_height (GTK_WIDGET (page));
 	PpsPoint point;
 
-	switch (pps_document_model_get_rotation (priv->model)) {
+	switch (pps_document_model_get_effective_page_rotation (priv->model, priv->index)) {
 	case 0:
 		point.x = x / scale;
 		point.y = y / scale;

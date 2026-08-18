@@ -49,5 +49,65 @@ template $PpsSidebarThumbnails: $PpsSidebarPage {
         };
       };
     }
+
+    PopoverMenu popup {
+      has-arrow: false;
+      halign: start;
+      menu-model: thumbnail-popup;
+    }
   };
+}
+
+menu thumbnail-popup {
+  section {
+    item {
+      label: _("Zoom _In");
+      action: "doc.zoom-in";
+      hidden-when: "action-disabled";
+    }
+
+    item {
+      label: _("Zoom _Out");
+      action: "doc.zoom-out";
+      hidden-when: "action-disabled";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Bookmark Page");
+      action: "doc.bookmark-page";
+      hidden-when: "action-disabled";
+    }
+
+    item {
+      label: _("_Remove Bookmark");
+      action: "doc.remove-bookmark-page";
+      hidden-when: "action-disabled";
+    }
+  }
+
+  section {
+    item {
+      label: _("Rotate _Left");
+      action: "doc.rotate-page-left";
+    }
+
+    item {
+      label: _("Rotate _Right");
+      action: "doc.rotate-page-right";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Delete Page");
+      action: "doc.delete-page";
+    }
+
+    item {
+      label: _("Cr_op Page…");
+      action: "doc.crop-page";
+    }
+  }
 }

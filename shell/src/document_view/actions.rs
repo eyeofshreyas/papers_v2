@@ -2,7 +2,9 @@ use super::*;
 
 use crate::document_view::enums::AnnotationColor;
 use gtk::gdk::gdk_pixbuf;
-use papers_document::{AnnotationTextMarkupType, DocumentImages, DocumentSignatures};
+use papers_document::{
+    AnnotationFreeText, AnnotationTextMarkupType, DocumentImages, DocumentSignatures, Rectangle,
+};
 use papers_view::AnnotationTool;
 use papers_view::annotations_context::AddAnnotationData;
 
@@ -158,6 +160,73 @@ impl imp::PpsDocumentView {
                     move |_, _, _| {
                         obj.cmd_save_as();
                     }
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("add-watermark")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| {
+                        obj.cmd_add_watermark();
+                    }
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("compress-document")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| {
+                        obj.cmd_compress_document();
+                    }
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("delete-pages")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_delete_pages(None)
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("delete-page")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_delete_pages(Some(obj.rotate_page_target.get()))
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("crop-pages")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_crop_pages(None)
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("crop-page")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_crop_pages(Some(obj.rotate_page_target.get()))
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("apply-page-order")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_apply_page_order()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("extract-pages")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_extract_pages()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("merge-pdf")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_merge_pdf()
                 ))
                 .build(),
             gio::ActionEntryBuilder::new("show-properties")
@@ -395,6 +464,34 @@ impl imp::PpsDocumentView {
                     #[weak(rename_to = obj)]
                     self,
                     move |_, _, _| obj.cmd_rotate_right()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("rotate-page-left")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_rotate_page_left()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("rotate-page-right")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_rotate_page_right()
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("bookmark-page")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_set_bookmark_page(true)
+                ))
+                .build(),
+            gio::ActionEntryBuilder::new("remove-bookmark-page")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| obj.cmd_set_bookmark_page(false)
                 ))
                 .build(),
             gio::ActionEntryBuilder::new("copy")
@@ -974,8 +1071,639 @@ impl imp::PpsDocumentView {
         self.rotate(90);
     }
 
+    fn rotate_page(&self, degree: i32) {
+        let page = self.rotate_page_target.get();
+        let rotation = self.model.page_rotation(page) + degree;
+        self.model.set_page_rotation(page, rotation);
+    }
+
+    fn cmd_rotate_page_left(&self) {
+        self.rotate_page(-90);
+    }
+
+    fn cmd_rotate_page_right(&self) {
+        self.rotate_page(90);
+    }
+
+    fn cmd_set_bookmark_page(&self, bookmarked: bool) {
+        let page = self.rotate_page_target.get();
+        self.sidebar_thumbs.set_bookmarked(page, bookmarked);
+    }
+
     fn cmd_save_as(&self) {
         self.save_as();
+    }
+
+    fn cmd_add_watermark(&self) {
+        let entry = adw::EntryRow::builder()
+            .title(gettext("Watermark Text"))
+            .build();
+
+        let opacity_row = adw::SpinRow::with_range(1.0, 100.0, 1.0);
+        opacity_row.set_title(&gettext("Opacity"));
+        opacity_row.set_value(30.0);
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&entry);
+        group.add(&opacity_row);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Add Watermark"))
+            .body(gettext(
+                "Adds this text as a watermark to every page, then saves the document.",
+            ))
+            .extra_child(&group)
+            .default_response("add")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("add", &gettext("_Add"))]);
+        dialog.set_response_appearance("add", adw::ResponseAppearance::Suggested);
+        dialog.set_response_enabled("add", false);
+
+        entry.connect_changed(glib::clone!(
+            #[weak]
+            dialog,
+            move |entry| {
+                dialog.set_response_enabled("add", !entry.text().is_empty());
+            }
+        ));
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                entry,
+                #[strong]
+                opacity_row,
+                move |_, response| {
+                    if response == "add" {
+                        obj.apply_watermark(&entry.text(), opacity_row.value() / 100.0);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn apply_watermark(&self, text: &str, opacity: f64) {
+        let Some(document) = self.document() else {
+            return;
+        };
+        let Some(annotations_doc) = document.dynamic_cast_ref::<DocumentAnnotations>() else {
+            return;
+        };
+
+        for i in 0..document.n_pages() {
+            let Some(page) = document.page(i) else {
+                continue;
+            };
+            let (width, height) = document.page_size(i);
+            let margin = width.min(height) * 0.1;
+            let rect = Rectangle::with_coords(margin, margin, width - margin, height - margin);
+
+            let annot = AnnotationFreeText::new(&page);
+            annot.set_area(&rect);
+            annot.set_contents(text);
+            annot.set_rgba(&gdk::RGBA::new(0.5, 0.5, 0.5, 1.0));
+
+            if let Some(markup) = annot.dynamic_cast_ref::<AnnotationMarkup>() {
+                markup.set_opacity(opacity);
+            }
+
+            annotations_doc.add_annotation(&annot);
+        }
+
+        self.save_as();
+    }
+
+    fn cmd_compress_document(&self) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext(
+                    "Save your changes before compressing the document.",
+                ))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+
+            return;
+        }
+
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        match crate::pdf_mutation::compress(&path) {
+            Ok((before, after)) => {
+                // Translators: the two placeholders are human-readable file
+                // sizes, e.g. "1.2 MB"
+                let message = formatx!(
+                    gettext("Compressed from {} to {}"),
+                    glib::format_size(before),
+                    glib::format_size(after),
+                )
+                .expect("Wrong format in translated string");
+
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Compression failed: {}"), e)
+                    .expect("Wrong format in translated string");
+
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
+    }
+
+    fn cmd_delete_pages(&self, preselect: Option<i32>) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before deleting pages."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
+        let Some(document) = self.document() else {
+            return;
+        };
+        let n_pages = document.n_pages();
+
+        let entry = adw::EntryRow::builder()
+            .title(gettext("Pages (e.g. 1-3,5,8-10)"))
+            .build();
+
+        if let Some(page) = preselect {
+            entry.set_text(&(page + 1).to_string());
+        }
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&entry);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Delete Pages"))
+            .body(gettext(
+                "Removes the given pages from the document and saves it. This cannot be undone.",
+            ))
+            .extra_child(&group)
+            .default_response("delete")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("delete", &gettext("_Delete")),
+        ]);
+        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.set_response_enabled("delete", preselect.is_some());
+
+        entry.connect_changed(glib::clone!(
+            #[weak]
+            dialog,
+            move |entry| {
+                dialog.set_response_enabled("delete", !entry.text().is_empty());
+            }
+        ));
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                entry,
+                move |_, response| {
+                    if response == "delete" {
+                        obj.apply_delete_pages(&entry.text(), n_pages);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn apply_delete_pages(&self, input: &str, n_pages: i32) {
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let indices = match crate::pdf_mutation::parse_page_ranges(input, n_pages as u32) {
+            Ok(indices) => indices,
+            Err(e) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&e));
+                return;
+            }
+        };
+
+        match crate::pdf_mutation::delete_pages(&path, &indices) {
+            Ok(()) => {
+                self.sidebar_thumbs.reset_bookmarks();
+                let message = formatx!(gettext("Deleted {} page(s)"), indices.len())
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Delete failed: {}"), e)
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
+    }
+
+    fn cmd_crop_pages(&self, preselect: Option<i32>) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before cropping pages."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
+        let Some(document) = self.document() else {
+            return;
+        };
+        let n_pages = document.n_pages();
+
+        let entry = adw::EntryRow::builder()
+            .title(gettext("Pages (e.g. 1-3,5,8-10)"))
+            .build();
+
+        if let Some(page) = preselect {
+            entry.set_text(&(page + 1).to_string());
+        }
+
+        let top_row = adw::SpinRow::with_range(0.0, 500.0, 1.0);
+        top_row.set_title(&gettext("Top Margin (pt)"));
+        let bottom_row = adw::SpinRow::with_range(0.0, 500.0, 1.0);
+        bottom_row.set_title(&gettext("Bottom Margin (pt)"));
+        let left_row = adw::SpinRow::with_range(0.0, 500.0, 1.0);
+        left_row.set_title(&gettext("Left Margin (pt)"));
+        let right_row = adw::SpinRow::with_range(0.0, 500.0, 1.0);
+        right_row.set_title(&gettext("Right Margin (pt)"));
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&entry);
+        group.add(&top_row);
+        group.add(&bottom_row);
+        group.add(&left_row);
+        group.add(&right_row);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Crop Pages"))
+            .body(gettext(
+                "Shrinks the visible area of the given pages by the specified margins, then saves the document.",
+            ))
+            .extra_child(&group)
+            .default_response("crop")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("crop", &gettext("_Crop"))]);
+        dialog.set_response_appearance("crop", adw::ResponseAppearance::Suggested);
+        dialog.set_response_enabled("crop", preselect.is_some());
+
+        entry.connect_changed(glib::clone!(
+            #[weak]
+            dialog,
+            move |entry| {
+                dialog.set_response_enabled("crop", !entry.text().is_empty());
+            }
+        ));
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                entry,
+                #[strong]
+                top_row,
+                #[strong]
+                bottom_row,
+                #[strong]
+                left_row,
+                #[strong]
+                right_row,
+                move |_, response| {
+                    if response == "crop" {
+                        let margins = crate::pdf_mutation::CropMargins {
+                            top: top_row.value(),
+                            bottom: bottom_row.value(),
+                            left: left_row.value(),
+                            right: right_row.value(),
+                        };
+                        obj.apply_crop_pages(&entry.text(), n_pages, &margins);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn apply_crop_pages(
+        &self,
+        input: &str,
+        n_pages: i32,
+        margins: &crate::pdf_mutation::CropMargins,
+    ) {
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let indices = match crate::pdf_mutation::parse_page_ranges(input, n_pages as u32) {
+            Ok(indices) => indices,
+            Err(e) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&e));
+                return;
+            }
+        };
+
+        match crate::pdf_mutation::crop_pages(&path, &indices, margins) {
+            Ok(()) => {
+                let message = formatx!(gettext("Cropped {} page(s)"), indices.len())
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Crop failed: {}"), e)
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
+    }
+
+    fn cmd_apply_page_order(&self) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before saving the page order."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let order: Vec<u32> = self
+            .sidebar_thumbs
+            .current_order()
+            .into_iter()
+            .map(|p| p as u32)
+            .collect();
+
+        match crate::pdf_mutation::reorder_pages(&path, &order) {
+            Ok(()) => {
+                self.sidebar_thumbs.reset_order();
+                self.sidebar_thumbs.reset_bookmarks();
+                self.toast_overlay
+                    .add_toast(adw::Toast::new(&gettext("Page order saved")));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Save page order failed: {}"), e)
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
+    }
+
+    fn cmd_extract_pages(&self) {
+        let Some(document) = self.document() else {
+            return;
+        };
+        let n_pages = document.n_pages();
+
+        let entry = adw::EntryRow::builder()
+            .title(gettext("Pages (e.g. 1-3,5,8-10)"))
+            .build();
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&entry);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Extract Pages"))
+            .body(gettext("Saves the given pages as a new PDF file."))
+            .extra_child(&group)
+            .default_response("extract")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("extract", &gettext("E_xtract…")),
+        ]);
+        dialog.set_response_appearance("extract", adw::ResponseAppearance::Suggested);
+        dialog.set_response_enabled("extract", false);
+
+        entry.connect_changed(glib::clone!(
+            #[weak]
+            dialog,
+            move |entry| {
+                dialog.set_response_enabled("extract", !entry.text().is_empty());
+            }
+        ));
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                entry,
+                move |_, response| {
+                    if response == "extract" {
+                        obj.pick_extract_destination(&entry.text(), n_pages);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn pick_extract_destination(&self, input: &str, n_pages: i32) {
+        let indices = match crate::pdf_mutation::parse_page_ranges(input, n_pages as u32) {
+            Ok(indices) => indices,
+            Err(e) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&e));
+                return;
+            }
+        };
+
+        let Some(src_path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Extract Pages As…"))
+            .modal(true)
+            .initial_name("extracted.pdf")
+            .build();
+
+        self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            #[strong]
+            src_path,
+            #[strong]
+            indices,
+            async move {
+                let Ok(file) = dialog.save_future(Some(&obj.parent_window())).await else {
+                    return;
+                };
+
+                obj.file_dialog_save_folder(Some(&file), UserDirectory::Documents);
+
+                let Some(dest_path) = file.path() else {
+                    return;
+                };
+
+                match crate::pdf_mutation::extract_pages(&src_path, &dest_path, &indices) {
+                    Ok(()) => {
+                        let message = formatx!(gettext("Extracted {} page(s)"), indices.len())
+                            .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                    Err(e) => {
+                        let message = formatx!(gettext("Extract failed: {}"), e)
+                            .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                }
+            }
+        ));
+    }
+
+    fn cmd_merge_pdf(&self) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before merging in another PDF."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
+        let Some(document) = self.document() else {
+            return;
+        };
+        let n_pages = document.n_pages();
+
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Merge PDF"))
+            .modal(true)
+            .build();
+        papers_document::Document::factory_add_filters(&dialog, papers_document::Document::NONE);
+
+        self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            async move {
+                let Ok(file) = dialog.open_future(Some(&obj.parent_window())).await else {
+                    return;
+                };
+
+                obj.file_dialog_save_folder(Some(&file), UserDirectory::Documents);
+
+                let Some(insert_path) = file.path() else {
+                    return;
+                };
+
+                obj.ask_merge_position(insert_path, n_pages);
+            }
+        ));
+    }
+
+    fn ask_merge_position(&self, insert_path: std::path::PathBuf, n_pages: i32) {
+        let position_row = adw::SpinRow::with_range(1.0, (n_pages + 1) as f64, 1.0);
+        position_row.set_title(&gettext("Insert Before Page"));
+        position_row.set_value((n_pages + 1) as f64);
+
+        let group = adw::PreferencesGroup::new();
+        group.add(&position_row);
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Merge PDF"))
+            .body(gettext(
+                "Inserts every page of the selected PDF into this document, then saves it.",
+            ))
+            .extra_child(&group)
+            .default_response("merge")
+            .close_response("cancel")
+            .build();
+
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("merge", &gettext("_Merge")),
+        ]);
+        dialog.set_response_appearance("merge", adw::ResponseAppearance::Suggested);
+
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                position_row,
+                #[strong]
+                insert_path,
+                move |_, response| {
+                    if response == "merge" {
+                        obj.apply_merge_pdf(&insert_path, position_row.value() as u32 - 1);
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self.obj().as_ref()));
+    }
+
+    fn apply_merge_pdf(&self, insert_path: &std::path::Path, at_index: u32) {
+        let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        match crate::pdf_mutation::merge_pages(&path, insert_path, at_index) {
+            Ok(()) => {
+                self.sidebar_thumbs.reset_bookmarks();
+                self.toast_overlay
+                    .add_toast(adw::Toast::new(&gettext("Merged PDF")));
+            }
+            Err(e) => {
+                let message = formatx!(gettext("Merge failed: {}"), e)
+                    .expect("Wrong format in translated string");
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+        }
     }
 
     fn cmd_save_image_as(&self) {

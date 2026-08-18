@@ -111,6 +111,18 @@ void pps_document_model_set_rotation (PpsDocumentModel *model,
 PPS_PUBLIC
 gint pps_document_model_get_rotation (PpsDocumentModel *model);
 PPS_PUBLIC
+void pps_document_model_set_page_rotation (PpsDocumentModel *model,
+                                           gint page,
+                                           gint rotation);
+PPS_PUBLIC
+gint pps_document_model_get_page_rotation (PpsDocumentModel *model,
+                                           gint page);
+PPS_PUBLIC
+gint pps_document_model_get_effective_page_rotation (PpsDocumentModel *model,
+                                                     gint page);
+PPS_PUBLIC
+guint pps_document_model_get_page_rotation_generation (PpsDocumentModel *model);
+PPS_PUBLIC
 void pps_document_model_set_inverted_colors (PpsDocumentModel *model,
                                              gboolean inverted_colors);
 PPS_PUBLIC

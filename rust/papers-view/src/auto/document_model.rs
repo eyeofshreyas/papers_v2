@@ -90,6 +90,12 @@ impl DocumentModel {
         }
     }
 
+    #[doc(alias = "pps_document_model_get_effective_page_rotation")]
+    #[doc(alias = "get_effective_page_rotation")]
+    pub fn effective_page_rotation(&self, page: i32) -> i32 {
+        unsafe { ffi::pps_document_model_get_effective_page_rotation(self.to_glib_none().0, page) }
+    }
+
     #[doc(alias = "pps_document_model_get_inverted_colors")]
     #[doc(alias = "get_inverted_colors")]
     #[doc(alias = "inverted-colors")]
@@ -130,6 +136,18 @@ impl DocumentModel {
                 self.to_glib_none().0,
             ))
         }
+    }
+
+    #[doc(alias = "pps_document_model_get_page_rotation")]
+    #[doc(alias = "get_page_rotation")]
+    pub fn page_rotation(&self, page: i32) -> i32 {
+        unsafe { ffi::pps_document_model_get_page_rotation(self.to_glib_none().0, page) }
+    }
+
+    #[doc(alias = "pps_document_model_get_page_rotation_generation")]
+    #[doc(alias = "get_page_rotation_generation")]
+    pub fn page_rotation_generation(&self) -> u32 {
+        unsafe { ffi::pps_document_model_get_page_rotation_generation(self.to_glib_none().0) }
     }
 
     #[doc(alias = "pps_document_model_get_rotation")]
@@ -257,6 +275,13 @@ impl DocumentModel {
         }
     }
 
+    #[doc(alias = "pps_document_model_set_page_rotation")]
+    pub fn set_page_rotation(&self, page: i32, rotation: i32) {
+        unsafe {
+            ffi::pps_document_model_set_page_rotation(self.to_glib_none().0, page, rotation);
+        }
+    }
+
     #[doc(alias = "pps_document_model_set_rotation")]
     #[doc(alias = "rotation")]
     pub fn set_rotation(&self, rotation: i32) {
@@ -333,6 +358,37 @@ impl DocumentModel {
                 c"page-changed".as_ptr(),
                 Some(std::mem::transmute::<*const (), unsafe extern "C" fn()>(
                     page_changed_trampoline::<F> as *const (),
+                )),
+                Box_::into_raw(f),
+            )
+        }
+    }
+
+    #[doc(alias = "page-rotation-changed")]
+    pub fn connect_page_rotation_changed<F: Fn(&Self, i32, i32) + 'static>(
+        &self,
+        f: F,
+    ) -> SignalHandlerId {
+        unsafe extern "C" fn page_rotation_changed_trampoline<
+            F: Fn(&DocumentModel, i32, i32) + 'static,
+        >(
+            this: *mut ffi::PpsDocumentModel,
+            object: std::ffi::c_int,
+            p0: std::ffi::c_int,
+            f: glib::ffi::gpointer,
+        ) {
+            unsafe {
+                let f: &F = &*(f as *const F);
+                f(&from_glib_borrow(this), object, p0)
+            }
+        }
+        unsafe {
+            let f: Box_<F> = Box_::new(f);
+            connect_raw(
+                self.as_ptr() as *mut _,
+                c"page-rotation-changed".as_ptr(),
+                Some(std::mem::transmute::<*const (), unsafe extern "C" fn()>(
+                    page_rotation_changed_trampoline::<F> as *const (),
                 )),
                 Box_::into_raw(f),
             )
