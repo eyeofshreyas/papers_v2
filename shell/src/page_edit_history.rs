@@ -143,6 +143,16 @@ impl PageEditHistory {
             let _ = fs::remove_file(p);
         }
     }
+
+    /// Pops and deletes the most recent undo snapshot without restoring
+    /// anything. Call this when a checkpointed mutation itself failed,
+    /// so the wasted undo slot from the failed attempt isn't left
+    /// behind.
+    pub fn discard_last_checkpoint(&self) {
+        if let Some(p) = self.undo_stack.borrow_mut().pop() {
+            let _ = fs::remove_file(p);
+        }
+    }
 }
 
 impl Drop for PageEditHistory {
@@ -244,6 +254,48 @@ mod tests {
             history.undo_stack.borrow().len(),
             PageEditHistory::MAX_DEPTH
         );
+
+        // The oldest 5 checkpoints (v0..v4) must have been evicted, not
+        // the newest — undo repeatedly and confirm we land on v5, the
+        // oldest surviving snapshot, not an earlier one. This would fail
+        // if eviction ever removed from the wrong end of the stack.
+        for _ in 0..PageEditHistory::MAX_DEPTH {
+            history.undo(&doc).unwrap();
+        }
+        assert_eq!(fs::read(&doc).unwrap(), b"v5");
+        assert!(!history.can_undo());
+
+        fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn multi_step_undo_redo_across_several_checkpoints() {
+        let tmp_dir =
+            std::env::temp_dir().join(format!("papers-page-history-test-f-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let doc = make_test_file(&tmp_dir, "doc.pdf", b"v0");
+
+        let history = PageEditHistory::default();
+        history.checkpoint(&doc).unwrap();
+        fs::write(&doc, b"v1").unwrap();
+        history.checkpoint(&doc).unwrap();
+        fs::write(&doc, b"v2").unwrap();
+        history.checkpoint(&doc).unwrap();
+        fs::write(&doc, b"v3").unwrap();
+
+        history.undo(&doc).unwrap();
+        assert_eq!(fs::read(&doc).unwrap(), b"v2");
+        history.undo(&doc).unwrap();
+        assert_eq!(fs::read(&doc).unwrap(), b"v1");
+        history.undo(&doc).unwrap();
+        assert_eq!(fs::read(&doc).unwrap(), b"v0");
+        assert!(!history.can_undo());
+
+        history.redo(&doc).unwrap();
+        assert_eq!(fs::read(&doc).unwrap(), b"v1");
+        history.redo(&doc).unwrap();
+        assert_eq!(fs::read(&doc).unwrap(), b"v2");
+        assert!(history.can_redo());
 
         fs::remove_dir_all(&tmp_dir).ok();
     }

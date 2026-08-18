@@ -1395,6 +1395,7 @@ impl imp::PpsDocumentView {
                 self.toast_with_undo(&message);
             }
             Err(e) => {
+                self.page_edit_history.discard_last_checkpoint();
                 let message = formatx!(gettext("Delete failed: {}"), e)
                     .expect("Wrong format in translated string");
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
@@ -1440,6 +1441,13 @@ impl imp::PpsDocumentView {
                 let Some(dest_path) = file.path() else {
                     return;
                 };
+
+                if dest_path == src_path {
+                    obj.toast_overlay.add_toast(adw::Toast::new(&gettext(
+                        "Choose a different file — use “Update Document” to modify this one.",
+                    )));
+                    return;
+                }
 
                 if let Err(e) = std::fs::copy(&src_path, &dest_path) {
                     let message = formatx!(gettext("Could not create the copy: {}"), e)
@@ -1606,6 +1614,7 @@ impl imp::PpsDocumentView {
                 self.toast_with_undo(&message);
             }
             Err(e) => {
+                self.page_edit_history.discard_last_checkpoint();
                 let message = formatx!(gettext("Crop failed: {}"), e)
                     .expect("Wrong format in translated string");
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
@@ -1665,6 +1674,13 @@ impl imp::PpsDocumentView {
                 let Some(dest_path) = file.path() else {
                     return;
                 };
+
+                if dest_path == src_path {
+                    obj.toast_overlay.add_toast(adw::Toast::new(&gettext(
+                        "Choose a different file — use “Update Document” to modify this one.",
+                    )));
+                    return;
+                }
 
                 if let Err(e) = std::fs::copy(&src_path, &dest_path) {
                     let message = formatx!(gettext("Could not create the copy: {}"), e)
@@ -1763,6 +1779,7 @@ impl imp::PpsDocumentView {
                 self.toast_with_undo(&gettext("Page order saved"));
             }
             Err(e) => {
+                self.page_edit_history.discard_last_checkpoint();
                 let message = formatx!(gettext("Save page order failed: {}"), e)
                     .expect("Wrong format in translated string");
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
@@ -1807,6 +1824,13 @@ impl imp::PpsDocumentView {
                 let Some(dest_path) = file.path() else {
                     return;
                 };
+
+                if dest_path == src_path {
+                    obj.toast_overlay.add_toast(adw::Toast::new(&gettext(
+                        "Choose a different file — use “Update Document” to modify this one.",
+                    )));
+                    return;
+                }
 
                 if let Err(e) = std::fs::copy(&src_path, &dest_path) {
                     let message = formatx!(gettext("Could not create the copy: {}"), e)
@@ -2050,6 +2074,7 @@ impl imp::PpsDocumentView {
                 self.toast_with_undo(&gettext("Merged PDF"));
             }
             Err(e) => {
+                self.page_edit_history.discard_last_checkpoint();
                 let message = formatx!(gettext("Merge failed: {}"), e)
                     .expect("Wrong format in translated string");
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
@@ -2089,6 +2114,13 @@ impl imp::PpsDocumentView {
                 let Some(dest_path) = file.path() else {
                     return;
                 };
+
+                if dest_path == src_path {
+                    obj.toast_overlay.add_toast(adw::Toast::new(&gettext(
+                        "Choose a different file — use “Update Document” to modify this one.",
+                    )));
+                    return;
+                }
 
                 if let Err(e) = std::fs::copy(&src_path, &dest_path) {
                     let message = formatx!(gettext("Could not create the copy: {}"), e)
