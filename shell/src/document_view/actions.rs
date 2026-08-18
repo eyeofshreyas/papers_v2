@@ -1841,18 +1841,6 @@ impl imp::PpsDocumentView {
     }
 
     fn cmd_merge_pdf(&self) {
-        if self.check_document_modified() {
-            let dialog = adw::AlertDialog::builder()
-                .heading(gettext("Unsaved Changes"))
-                .body(gettext("Save your changes before merging in another PDF."))
-                .default_response("ok")
-                .build();
-
-            dialog.add_response("ok", &gettext("_OK"));
-            dialog.present(Some(self.obj().as_ref()));
-            return;
-        }
-
         let Some(document) = self.document() else {
             return;
         };
@@ -1896,7 +1884,7 @@ impl imp::PpsDocumentView {
         let dialog = adw::AlertDialog::builder()
             .heading(gettext("Merge PDF"))
             .body(gettext(
-                "Inserts every page of the selected PDF into this document, then saves it.",
+                "Inserts every page of the selected PDF into this document.",
             ))
             .extra_child(&group)
             .default_response("merge")
@@ -1905,7 +1893,8 @@ impl imp::PpsDocumentView {
 
         dialog.add_responses(&[
             ("cancel", &gettext("_Cancel")),
-            ("merge", &gettext("_Merge")),
+            ("merge-copy", &gettext("Save As New _Copy…")),
+            ("merge", &gettext("_Update Document")),
         ]);
         dialog.set_response_appearance("merge", adw::ResponseAppearance::Suggested);
 
@@ -1919,8 +1908,11 @@ impl imp::PpsDocumentView {
                 #[strong]
                 insert_path,
                 move |_, response| {
-                    if response == "merge" {
-                        obj.apply_merge_pdf(&insert_path, position_row.value() as u32 - 1);
+                    let at_index = position_row.value() as u32 - 1;
+                    match response {
+                        "merge" => obj.apply_merge_pdf(&insert_path, at_index),
+                        "merge-copy" => obj.pick_merge_pdf_copy_destination(&insert_path, at_index),
+                        _ => (),
                     }
                 }
             ),
@@ -1930,15 +1922,33 @@ impl imp::PpsDocumentView {
     }
 
     fn apply_merge_pdf(&self, insert_path: &std::path::Path, at_index: u32) {
+        if self.check_document_modified() {
+            let dialog = adw::AlertDialog::builder()
+                .heading(gettext("Unsaved Changes"))
+                .body(gettext("Save your changes before merging in another PDF."))
+                .default_response("ok")
+                .build();
+
+            dialog.add_response("ok", &gettext("_OK"));
+            dialog.present(Some(self.obj().as_ref()));
+            return;
+        }
+
         let Some(path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
             return;
         };
 
+        if let Err(e) = self.page_edit_history.checkpoint(&path) {
+            let message = formatx!(gettext("Could not save an undo point: {}"), e)
+                .expect("Wrong format in translated string");
+            self.toast_overlay.add_toast(adw::Toast::new(&message));
+            return;
+        }
+
         match crate::pdf_mutation::merge_pages(&path, insert_path, at_index) {
             Ok(()) => {
                 self.sidebar_thumbs.reset_bookmarks();
-                self.toast_overlay
-                    .add_toast(adw::Toast::new(&gettext("Merged PDF")));
+                self.toast_with_undo(&gettext("Merged PDF"));
             }
             Err(e) => {
                 let message = formatx!(gettext("Merge failed: {}"), e)
@@ -1946,6 +1956,62 @@ impl imp::PpsDocumentView {
                 self.toast_overlay.add_toast(adw::Toast::new(&message));
             }
         }
+    }
+
+    fn pick_merge_pdf_copy_destination(&self, insert_path: &std::path::Path, at_index: u32) {
+        let insert_path = insert_path.to_path_buf();
+
+        let Some(src_path) = self.file.borrow().as_ref().and_then(|f| f.path()) else {
+            return;
+        };
+
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Save As New Copy…"))
+            .modal(true)
+            .initial_name(self.edit_name.borrow().clone())
+            .build();
+
+        self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            #[strong]
+            src_path,
+            #[strong]
+            insert_path,
+            async move {
+                let Ok(file) = dialog.save_future(Some(&obj.parent_window())).await else {
+                    return;
+                };
+
+                obj.file_dialog_save_folder(Some(&file), UserDirectory::Documents);
+
+                let Some(dest_path) = file.path() else {
+                    return;
+                };
+
+                if let Err(e) = std::fs::copy(&src_path, &dest_path) {
+                    let message = formatx!(gettext("Could not create the copy: {}"), e)
+                        .expect("Wrong format in translated string");
+                    obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    return;
+                }
+
+                match crate::pdf_mutation::merge_pages(&dest_path, &insert_path, at_index) {
+                    Ok(()) => {
+                        obj.toast_overlay.add_toast(adw::Toast::new(&gettext(
+                            "Merged PDF and saved as a new copy",
+                        )));
+                    }
+                    Err(e) => {
+                        let message = formatx!(gettext("Merge failed: {}"), e)
+                            .expect("Wrong format in translated string");
+                        obj.toast_overlay.add_toast(adw::Toast::new(&message));
+                    }
+                }
+            }
+        ));
     }
 
     fn cmd_save_image_as(&self) {
